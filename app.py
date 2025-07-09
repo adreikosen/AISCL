@@ -1,5 +1,171 @@
 from dotenv import load_dotenv
 import os
-load_dotenv()
-api_key = os.getenv("OPENAI_API_KEY")
+import json
+from openai import OpenAI
+from model import NetworkOptimization
+from typing import List, Dict, Any
 
+# Load environment variables
+load_dotenv()
+
+# Initialize OpenAI client
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+# Initialize the optimization model
+model = NetworkOptimization("Network_Optimization_Model")
+
+def get_available_functions() -> List[Dict]:
+    """Return the available functions for the AI to call."""
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "add_plant",
+                "description": "Add a new plant with its capacity",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Name of the plant"},
+                        "capacity": {"type": "number", "description": "Production capacity of the plant"}
+                    },
+                    "required": ["name", "capacity"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "add_distribution_center",
+                "description": "Add a new distribution center with its demand",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Name of the distribution center"},
+                        "demand": {"type": "number", "description": "Demand of the distribution center"}
+                    },
+                    "required": ["name", "demand"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "set_shipping_cost",
+                "description": "Set the shipping cost between a plant and a distribution center",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "plant": {"type": "string", "description": "Name of the plant"},
+                        "dc": {"type": "string", "description": "Name of the distribution center"},
+                        "cost": {"type": "number", "description": "Cost per unit to ship from plant to DC"}
+                    },
+                    "required": ["plant", "dc", "cost"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "solve_optimization",
+                "description": "Solve the optimization problem and get the solution",
+                "parameters": {"type": "object", "properties": {}}
+            }
+        }
+    ]
+
+def execute_function_call(function_name: str, function_args: Dict[str, Any]) -> str:
+    """Execute the function call and return the result as a string."""
+    try:
+        if function_name == "add_plant":
+            model.add_plant(function_args["name"], function_args["capacity"])
+            return f"Added plant {function_args['name']} with capacity {function_args['capacity']}"
+            
+        elif function_name == "add_distribution_center":
+            model.add_distribution_center(function_args["name"], function_args["demand"])
+            return f"Added distribution center {function_args['name']} with demand {function_args['demand']}"
+            
+        elif function_name == "set_shipping_cost":
+            model.set_shipping_cost(
+                function_args["plant"],
+                function_args["dc"],
+                function_args["cost"]
+            )
+            return f"Set shipping cost from {function_args['plant']} to {function_args['dc']} to {function_args['cost']}"
+            
+        elif function_name == "solve_optimization":
+            solution = model.solve()
+            summary = model.get_solution_summary()
+            return f"Optimization complete. Status: {solution['status']}\nTotal Cost: {solution['total_cost']}\n\n{summary}"
+            
+        return f"Unknown function: {function_name}"
+    except Exception as e:
+        return f"Error executing {function_name}: {str(e)}"
+
+def chat_with_ai(user_input: str, messages: List[Dict] = None) -> str:
+    """Send a message to the AI and get a response, handling function calls."""
+    if messages is None:
+        messages = []
+    
+    # Add user message to the conversation
+    messages.append({"role": "user", "content": user_input})
+    
+    # Get AI response
+    response = client.chat.completions.create(
+        model="gpt-4.1-nano",
+        messages=messages,
+        tools=get_available_functions(),
+        tool_choice="auto"
+    )
+    
+    response_message = response.choices[0].message
+    messages.append(response_message)
+    
+    # Check if the AI wants to call a function
+    if response_message.tool_calls:
+        for tool_call in response_message.tool_calls:
+            function_name = tool_call.function.name
+            function_args = json.loads(tool_call.function.arguments)
+            
+            # Execute the function
+            function_response = execute_function_call(function_name, function_args)
+            
+            # Add the function response to the messages
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "name": function_name,
+                "content": function_response
+            })
+        
+        # Get a new response from the AI with the function's response
+        second_response = client.chat.completions.create(
+            model="gpt-4",
+            messages=messages
+        )
+        
+        return second_response.choices[0].message.content
+    
+    return response_message.content
+
+def main():
+    """Main function to run the chatbot."""
+    print("Welcome to the Network Optimization Chatbot!")
+    print("You can add plants, distribution centers, set shipping costs, and solve the optimization problem.")
+    print("Type 'exit' to quit.\n")
+    
+    messages = [{
+        "role": "system",
+        "content": "You are a helpful assistant for network optimization. You can help users model and solve transportation problems."
+    }]
+    
+    while True:
+        user_input = input("\nYou: ")
+        if user_input.lower() in ['exit', 'quit']:
+            print("Goodbye!")
+            break
+            
+        response = chat_with_ai(user_input, messages)
+        print(f"\nAssistant: {response}")
+
+if __name__ == "__main__":
+    main()
