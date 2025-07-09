@@ -16,8 +16,10 @@ class NetworkOptimization:
         self.distribution_centers = []
         self.capacity = {}        # plant -> capacity
         self.demand = {}          # dc -> demand
-        self.costs = {}           # (plant, dc) -> cost
+        self.costs = {}           # (plant, dc) -> cost/unit
         self.ship = {}            # Decision variables
+        #fixed variable for cost for plant ops
+        #variable cost for plant ops
         
     def add_plant(self, name, capacity):
         """Add a plant with its capacity."""
@@ -81,7 +83,7 @@ class NetworkOptimization:
     def solve(self):
         """Solve the optimization problem."""
         self.build_model()
-        status = self.prob.solve()
+        status = self.prob.solve(pulp.PULP_CBC_CMD(msg=False))
         return {
             'status': LpStatus[status],
             'total_cost': value(self.prob.objective),
@@ -93,6 +95,7 @@ class NetworkOptimization:
             }
         }
     
+    #use this function to get results from above function into readable format for API
     def get_solution_summary(self):
         """Return a formatted summary of the solution."""
         result = self.solve()
