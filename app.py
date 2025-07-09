@@ -139,7 +139,7 @@ def chat_with_ai(user_input: str, messages: List[Dict] = None) -> str:
         
         # Get a new response from the AI with the function's response
         second_response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4.1-nano",
             messages=messages
         )
         
@@ -149,7 +149,7 @@ def chat_with_ai(user_input: str, messages: List[Dict] = None) -> str:
 
 def main():
     """Main function to run the chatbot."""
-    print("Welcome to the Network Optimization Chatbot!")
+    print("Hello I am Kit your friendly network optimization chatbot!")
     print("You can add plants, distribution centers, set shipping costs, and solve the optimization problem.")
     print("Type 'exit' to quit.\n")
     
@@ -161,11 +161,11 @@ def main():
     while True:
         user_input = input("\nYou: ")
         if user_input.lower() in ['exit', 'quit']:
-            print("Goodbye!")
+            print("Goodbye - Kit signing off!")
             break
             
         response = chat_with_ai(user_input, messages)
-        print(f"\nAssistant: {response}")
+        print(f"\nKit: {response}")
 
 if __name__ == "__main__":
     main()
