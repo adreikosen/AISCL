@@ -161,7 +161,7 @@ def main():
     while True:
         user_input = input("\nYou: ")
         if user_input.lower() in ['exit', 'quit']:
-            print("Goodbye - Kit signing off!")
+            print("Goodbye :( - Kit signing off!")
             break
             
         response = chat_with_ai(user_input, messages)
