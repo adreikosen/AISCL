@@ -93,7 +93,66 @@ def get_available_functions() -> List[Dict]:
                 "description": "Get information about the current model including the current plants, current distribution centers, and shipping costs",
                 "parameters": {"type": "object", "properties": {}}
             }
-        }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "update_capacity",
+                "description": "Update capacity of existing plant",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Name of the plant"},
+                        "capacity": {"type": "number", "description": "Capacity of the plant"}
+                    },
+                    "required": ["name", "capacity"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "update_demand",
+                "description": "Update demand of existing distribution center",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Name of the distribution center"},
+                        "demand": {"type": "number", "description": "Demand of the distribution center"}
+                    },
+                    "required": ["name", "demand"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "remove_plant",
+                "description": "Remove existing plant",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Name of the plant"},
+                    },
+                    "required": ["name"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "remove_distribution_center",
+                "description": "Remove existing distribution center",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Name of the distribution center"},
+                    },
+                    "required": ["name"]
+                }
+            }
+        },
+        
     ]
 
 def execute_function_call(function_name: str, function_args: Dict[str, Any]) -> str:
@@ -127,6 +186,18 @@ def execute_function_call(function_name: str, function_args: Dict[str, Any]) -> 
             demand = model.demand
             #return f"Optimization complete. Status: {solution['status']}\nTotal Cost: {solution['total_cost']}\n\n{summary}"
             return f"Plants: {plants}\nDistribution Centers: {distribution_centers}\nShipping Costs: {shipping_costs}\nCapacity: {capacity}\nDemand: {demand}"
+        elif function_name == "update_capacity":
+            model.update_capacity(function_args["name"], function_args["capacity"])
+            return f"Updated capacity of {function_args['name']} to {function_args['capacity']}"
+        elif function_name == "update_demand":
+            model.update_demand(function_args["name"], function_args["demand"])
+            return f"Updated demand of {function_args['name']} to {function_args['demand']}"
+        elif function_name == "remove_plant":
+            model.remove_plant(function_args["name"])
+            return f"Removed plant {function_args['name']}"
+        elif function_name == "remove_distribution_center":
+            model.remove_distribution_center(function_args["name"])
+            return f"Removed distribution center {function_args['name']}"
         return f"Unknown function: {function_name}"
     except Exception as e:
         return f"Error executing {function_name}: {str(e)}"

@@ -26,7 +26,17 @@ class NetworkOptimization:
         self.plants.append(name)
         self.capacity[name] = capacity
         self.costs[name] = {}
-        
+    def remove_plant(self, name):
+        """Remove a plant."""
+        self.plants.remove(name)
+        del self.capacity[name]
+        del self.costs[name]
+    def remove_distribution_center(self, name):
+        """Remove a distribution center."""
+        self.distribution_centers.remove(name)
+        del self.demand[name]
+        for plant in self.plants:
+            del self.costs[plant][name]
     def add_distribution_center(self, name, demand):
         """Add a distribution center with its demand."""
         self.distribution_centers.append(name)
