@@ -11,8 +11,6 @@ load_dotenv()
 
 # Initialize OpenAI client
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-# Initialize the optimization model
 model = NetworkOptimization("Network_Optimization_Model")
 
 model.add_plant("Ahmedabad", 4800)
@@ -87,6 +85,14 @@ def get_available_functions() -> List[Dict]:
                 "description": "Solve the optimization problem and get the solution",
                 "parameters": {"type": "object", "properties": {}}
             }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_model_info",
+                "description": "Get information about the current model including the current plants, current distribution centers, and shipping costs",
+                "parameters": {"type": "object", "properties": {}}
+            }
         }
     ]
 
@@ -111,9 +117,16 @@ def execute_function_call(function_name: str, function_args: Dict[str, Any]) -> 
             
         elif function_name == "solve_optimization":
             solution = model.solve()
-            summary = model.get_solution_summary()
             #return f"Optimization complete. Status: {solution['status']}\nTotal Cost: {solution['total_cost']}\n\n{summary}"
             return f"Optimization complete. {solution}"
+        elif function_name == "get_model_info":
+            plants = model.plants
+            distribution_centers = model.distribution_centers
+            shipping_costs = model.costs
+            capacity = model.capacity
+            demand = model.demand
+            #return f"Optimization complete. Status: {solution['status']}\nTotal Cost: {solution['total_cost']}\n\n{summary}"
+            return f"Plants: {plants}\nDistribution Centers: {distribution_centers}\nShipping Costs: {shipping_costs}\nCapacity: {capacity}\nDemand: {demand}"
         return f"Unknown function: {function_name}"
     except Exception as e:
         return f"Error executing {function_name}: {str(e)}"
@@ -128,12 +141,12 @@ def chat_with_ai(user_input: str, messages: List[Dict] = None) -> str:
     
     # Get AI response
     response = client.chat.completions.create(
-        model="gpt-4.1-nano",
+        model="gpt-4o",
         messages=messages,
         tools=get_available_functions(),
         tool_choice="auto"
-    )
-    
+        )
+    print(response)
     response_message = response.choices[0].message
     messages.append(response_message)
     
@@ -156,7 +169,7 @@ def chat_with_ai(user_input: str, messages: List[Dict] = None) -> str:
         
         # Get a new response from the AI with the function's response
         second_response = client.chat.completions.create(
-            model="gpt-4.1-nano",
+            model="gpt-4o",
             messages=messages
         )
         
@@ -185,4 +198,5 @@ def main():
         print(f"\nKit: {response}")
 
 if __name__ == "__main__":
+    # Initialize the optimization model
     main()

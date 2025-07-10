@@ -95,7 +95,7 @@ class NetworkOptimization:
             }
         }
     
-    #use this function to get results from above function into readable format for API
+    # API is already able to understand JSON from solve() -- keeping this only for debugging
     def get_solution_summary(self):
         """Return a formatted summary of the solution."""
         result = self.solve()
