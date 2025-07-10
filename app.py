@@ -176,7 +176,6 @@ def execute_function_call(function_name: str, function_args: Dict[str, Any]) -> 
             
         elif function_name == "solve_optimization":
             solution = model.solve()
-            #return f"Optimization complete. Status: {solution['status']}\nTotal Cost: {solution['total_cost']}\n\n{summary}"
             return f"Optimization complete. {solution}"
         elif function_name == "get_model_info":
             plants = model.plants
@@ -184,7 +183,6 @@ def execute_function_call(function_name: str, function_args: Dict[str, Any]) -> 
             shipping_costs = model.costs
             capacity = model.capacity
             demand = model.demand
-            #return f"Optimization complete. Status: {solution['status']}\nTotal Cost: {solution['total_cost']}\n\n{summary}"
             return f"Plants: {plants}\nDistribution Centers: {distribution_centers}\nShipping Costs: {shipping_costs}\nCapacity: {capacity}\nDemand: {demand}"
         elif function_name == "update_capacity":
             model.update_capacity(function_args["name"], function_args["capacity"])
@@ -217,7 +215,6 @@ def chat_with_ai(user_input: str, messages: List[Dict] = None) -> str:
         tools=get_available_functions(),
         tool_choice="auto"
         )
-    print(response)
     response_message = response.choices[0].message
     messages.append(response_message)
     
