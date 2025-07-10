@@ -15,21 +15,21 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 # Initialize the optimization model
 model = NetworkOptimization("Network_Optimization_Model")
 
-# model.add_plant("Ahmedabad", 4800)
-# model.add_plant("Patna", 3500)
-# model.add_plant("Hyderabad", 2200)
+model.add_plant("Ahmedabad", 4800)
+model.add_plant("Patna", 3500)
+model.add_plant("Hyderabad", 2200)
 
-# # Add distribution centers with demands
-# model.add_distribution_center("Bhopal", 4800)
-# model.add_distribution_center("Indore", 5700)
+# Add distribution centers with demands
+model.add_distribution_center("Bhopal", 4800)
+model.add_distribution_center("Indore", 5700)
 
-# # Set shipping costs
-# model.set_shipping_cost("Ahmedabad", "Bhopal", 16500)
-# model.set_shipping_cost("Ahmedabad", "Indore", 10600)
-# model.set_shipping_cost("Patna", "Bhopal", 12200)
-# model.set_shipping_cost("Patna", "Indore", 12600)
-# model.set_shipping_cost("Hyderabad", "Bhopal", 10300)
-# model.set_shipping_cost("Hyderabad", "Indore", 9240)
+# Set shipping costs
+model.set_shipping_cost("Ahmedabad", "Bhopal", 16500)
+model.set_shipping_cost("Ahmedabad", "Indore", 10600)
+model.set_shipping_cost("Patna", "Bhopal", 12200)
+model.set_shipping_cost("Patna", "Indore", 12600)
+model.set_shipping_cost("Hyderabad", "Bhopal", 10300)
+model.set_shipping_cost("Hyderabad", "Indore", 9240)
 
 def get_available_functions() -> List[Dict]:
     """Return the available functions for the AI to call."""
@@ -112,8 +112,8 @@ def execute_function_call(function_name: str, function_args: Dict[str, Any]) -> 
         elif function_name == "solve_optimization":
             solution = model.solve()
             summary = model.get_solution_summary()
-            return f"Optimization complete. Status: {solution['status']}\nTotal Cost: {solution['total_cost']}\n\n{summary}"
-            
+            #return f"Optimization complete. Status: {solution['status']}\nTotal Cost: {solution['total_cost']}\n\n{summary}"
+            return f"Optimization complete. {solution}"
         return f"Unknown function: {function_name}"
     except Exception as e:
         return f"Error executing {function_name}: {str(e)}"
