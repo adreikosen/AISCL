@@ -152,6 +152,18 @@ def get_available_functions() -> List[Dict]:
                 }
             }
         },
+        {
+            "type": "function",
+            "function": {
+                "name": "clear_model",
+                "description": "Clear the model",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            }
+        },
         
     ]
 
@@ -196,7 +208,11 @@ def execute_function_call(function_name: str, function_args: Dict[str, Any]) -> 
         elif function_name == "remove_distribution_center":
             model.remove_distribution_center(function_args["name"])
             return f"Removed distribution center {function_args['name']}"
-        return f"Unknown function: {function_name}"
+        elif function_name == "clear_model":
+            model.clear_model()
+            return "Model cleared successfully"
+        else:        
+            return f"Unknown function: {function_name}"
     except Exception as e:
         return f"Error executing {function_name}: {str(e)}"
 

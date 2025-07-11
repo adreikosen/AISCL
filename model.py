@@ -21,6 +21,15 @@ class NetworkOptimization:
         #fixed variable for cost for plant ops
         #variable cost for plant ops
         
+    
+    def clear_model(self):
+        """Clear the model."""
+        self.plants = []
+        self.distribution_centers = []
+        self.capacity = {}
+        self.demand = {}
+        self.costs = {}
+        self.ship = {}
     def add_plant(self, name, capacity):
         """Add a plant with its capacity."""
         self.plants.append(name)
