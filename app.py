@@ -1,6 +1,7 @@
 from dotenv import load_dotenv
 import os
 import json
+from httpx._transports import base
 from openai import OpenAI
 from model import NetworkOptimization
 from typing import List, Dict, Any
@@ -10,9 +11,23 @@ load_dotenv()
 
 # Initialize OpenAI client
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-# Initialize the optimization model
 model = NetworkOptimization("Network_Optimization_Model")
+
+model.add_plant("Ahmedabad", 4800)
+model.add_plant("Patna", 3500)
+model.add_plant("Hyderabad", 2200)
+
+# Add distribution centers with demands
+model.add_distribution_center("Bhopal", 4800)
+model.add_distribution_center("Indore", 5700)
+
+# Set shipping costs
+model.set_shipping_cost("Ahmedabad", "Bhopal", 16500)
+model.set_shipping_cost("Ahmedabad", "Indore", 10600)
+model.set_shipping_cost("Patna", "Bhopal", 12200)
+model.set_shipping_cost("Patna", "Indore", 12600)
+model.set_shipping_cost("Hyderabad", "Bhopal", 10300)
+model.set_shipping_cost("Hyderabad", "Indore", 9240)
 
 def get_available_functions() -> List[Dict]:
     """Return the available functions for the AI to call."""
@@ -70,7 +85,86 @@ def get_available_functions() -> List[Dict]:
                 "description": "Solve the optimization problem and get the solution",
                 "parameters": {"type": "object", "properties": {}}
             }
-        }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_model_info",
+                "description": "Get information about the current model including the current plants, current distribution centers, and shipping costs",
+                "parameters": {"type": "object", "properties": {}}
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "update_capacity",
+                "description": "Update capacity of existing plant",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Name of the plant"},
+                        "capacity": {"type": "number", "description": "Capacity of the plant"}
+                    },
+                    "required": ["name", "capacity"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "update_demand",
+                "description": "Update demand of existing distribution center",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Name of the distribution center"},
+                        "demand": {"type": "number", "description": "Demand of the distribution center"}
+                    },
+                    "required": ["name", "demand"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "remove_plant",
+                "description": "Remove existing plant",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Name of the plant"},
+                    },
+                    "required": ["name"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "remove_distribution_center",
+                "description": "Remove existing distribution center",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Name of the distribution center"},
+                    },
+                    "required": ["name"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "clear_model",
+                "description": "Clear the model",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            }
+        },
+        
     ]
 
 def execute_function_call(function_name: str, function_args: Dict[str, Any]) -> str:
@@ -94,10 +188,31 @@ def execute_function_call(function_name: str, function_args: Dict[str, Any]) -> 
             
         elif function_name == "solve_optimization":
             solution = model.solve()
-            summary = model.get_solution_summary()
-            return f"Optimization complete. Status: {solution['status']}\nTotal Cost: {solution['total_cost']}\n\n{summary}"
-            
-        return f"Unknown function: {function_name}"
+            return f"Optimization complete. {solution}"
+        elif function_name == "get_model_info":
+            plants = model.plants
+            distribution_centers = model.distribution_centers
+            shipping_costs = model.costs
+            capacity = model.capacity
+            demand = model.demand
+            return f"Plants: {plants}\nDistribution Centers: {distribution_centers}\nShipping Costs: {shipping_costs}\nCapacity: {capacity}\nDemand: {demand}"
+        elif function_name == "update_capacity":
+            model.update_capacity(function_args["name"], function_args["capacity"])
+            return f"Updated capacity of {function_args['name']} to {function_args['capacity']}"
+        elif function_name == "update_demand":
+            model.update_demand(function_args["name"], function_args["demand"])
+            return f"Updated demand of {function_args['name']} to {function_args['demand']}"
+        elif function_name == "remove_plant":
+            model.remove_plant(function_args["name"])
+            return f"Removed plant {function_args['name']}"
+        elif function_name == "remove_distribution_center":
+            model.remove_distribution_center(function_args["name"])
+            return f"Removed distribution center {function_args['name']}"
+        elif function_name == "clear_model":
+            model.clear_model()
+            return "Model cleared successfully"
+        else:        
+            return f"Unknown function: {function_name}"
     except Exception as e:
         return f"Error executing {function_name}: {str(e)}"
 
@@ -111,12 +226,11 @@ def chat_with_ai(user_input: str, messages: List[Dict] = None) -> str:
     
     # Get AI response
     response = client.chat.completions.create(
-        model="gpt-4.1-nano",
+        model="gpt-4o",
         messages=messages,
         tools=get_available_functions(),
         tool_choice="auto"
-    )
-    
+        )
     response_message = response.choices[0].message
     messages.append(response_message)
     
@@ -139,7 +253,7 @@ def chat_with_ai(user_input: str, messages: List[Dict] = None) -> str:
         
         # Get a new response from the AI with the function's response
         second_response = client.chat.completions.create(
-            model="gpt-4.1-nano",
+            model="gpt-4o",
             messages=messages
         )
         
@@ -161,11 +275,12 @@ def main():
     while True:
         user_input = input("\nYou: ")
         if user_input.lower() in ['exit', 'quit']:
-            print("Goodbye - Kit signing off!")
+            print("Goodbye :( - Kit signing off!")
             break
             
         response = chat_with_ai(user_input, messages)
         print(f"\nKit: {response}")
 
 if __name__ == "__main__":
+    # Initialize the optimization model
     main()

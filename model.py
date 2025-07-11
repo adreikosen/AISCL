@@ -21,12 +21,31 @@ class NetworkOptimization:
         #fixed variable for cost for plant ops
         #variable cost for plant ops
         
+    
+    def clear_model(self):
+        """Clear the model."""
+        self.plants = []
+        self.distribution_centers = []
+        self.capacity = {}
+        self.demand = {}
+        self.costs = {}
+        self.ship = {}
     def add_plant(self, name, capacity):
         """Add a plant with its capacity."""
         self.plants.append(name)
         self.capacity[name] = capacity
         self.costs[name] = {}
-        
+    def remove_plant(self, name):
+        """Remove a plant."""
+        self.plants.remove(name)
+        del self.capacity[name]
+        del self.costs[name]
+    def remove_distribution_center(self, name):
+        """Remove a distribution center."""
+        self.distribution_centers.remove(name)
+        del self.demand[name]
+        for plant in self.plants:
+            del self.costs[plant][name]
     def add_distribution_center(self, name, demand):
         """Add a distribution center with its demand."""
         self.distribution_centers.append(name)
@@ -95,7 +114,7 @@ class NetworkOptimization:
             }
         }
     
-    #use this function to get results from above function into readable format for API
+    # API is already able to understand JSON from solve() -- keeping this only for debugging
     def get_solution_summary(self):
         """Return a formatted summary of the solution."""
         result = self.solve()
