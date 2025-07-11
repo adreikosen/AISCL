@@ -32,7 +32,6 @@ def initialize_model():
     model.set_shipping_cost("Patna", "Indore", 12600)
     model.set_shipping_cost("Hyderabad", "Bhopal", 10300)
     model.set_shipping_cost("Hyderabad", "Indore", 9240)
-    create_snapshot("Base_Model")
 
 def create_snapshot(snapshot_name: str = None) -> str:
     """
@@ -320,6 +319,8 @@ def execute_function_call(function_name: str, function_args: Dict[str, Any]) -> 
             return f"Set shipping cost from {function_args['plant']} to {function_args['dc']} to {function_args['cost']}"
             
         elif function_name == "solve_optimization":
+            snapshot_name = f"pre_solve_{len(snapshots) + 1}"
+            create_snapshot(snapshot_name)
             solution = model.solve()
             return f"Optimization complete. {solution}"
             
@@ -446,7 +447,7 @@ def main():
         "role": "system",
         "content": """You are a helpful assistant for network optimization. You can help users model and solve network optimization problems in supply chain. 
         You can also help users create and compare different scenarios by taking snapshots of the model at different points in time.
-        When comparing models, make sure to highlight the key differences and their business implications."""
+        When comparing models, make sure to highlight the key differences and their business implications. A base model has been preloaded into the system."""
     }]
     
     while True:
@@ -458,6 +459,7 @@ def main():
                 
             response = chat_with_ai(user_input, messages)
             print(f"\nKit: {response}")
+            print(snapshots)
             
         except KeyboardInterrupt:
             print("\n\nGoodbye! Thanks for using Kit. Have a great day!")
