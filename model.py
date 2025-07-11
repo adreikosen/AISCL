@@ -1,4 +1,5 @@
 from pulp import *
+from copy import deepcopy
 
 class NetworkOptimization:
     def __init__(self, name="Network_Optimization_Model"):
@@ -103,6 +104,8 @@ class NetworkOptimization:
         """Solve the optimization problem."""
         self.build_model()
         status = self.prob.solve(pulp.PULP_CBC_CMD(msg=False))
+        if status == LpStatusInfeasible or status == LpStatusUndefined:
+            return { 'There was an error solving the problem. Please check your model.'}
         return {
             'status': LpStatus[status],
             'total_cost': value(self.prob.objective),
@@ -128,6 +131,92 @@ class NetworkOptimization:
         
         return "\n".join(output)
 
+    def copy(self, new_name=None):
+        """
+        Create a deep copy of the current model.
+        
+        Args:
+            new_name (str, optional): Name for the new model. If None, appends "_copy" to the original name.
+            
+        Returns:
+            NetworkOptimization: A new instance with the same data as the current model
+        """
+        if new_name is None:
+            new_name = f"{self.name}_copy"
+            
+        # Create new instance
+        new_model = NetworkOptimization(new_name)
+        
+        # Copy all attributes
+        new_model.plants = self.plants.copy()
+        new_model.distribution_centers = self.distribution_centers.copy()
+        new_model.capacity = self.capacity.copy()
+        new_model.demand = self.demand.copy()
+        
+        # Deep copy the costs dictionary
+        new_model.costs = {}
+        for plant in self.plants:
+            new_model.costs[plant] = self.costs[plant].copy()
+        
+        return new_model
+
+    @staticmethod
+    def compare_models(model1, model2):
+        """
+        Compare two NetworkOptimization models and return the differences.
+        
+        Args:
+            model1 (NetworkOptimization): First model to compare
+            model2 (NetworkOptimization): Second model to compare
+            
+        Returns:
+            dict: Dictionary containing the differences between the two models
+        """
+        differences = {
+            'name': (model1.name, model2.name),
+            'plants': {
+                'added': list(set(model2.plants) - set(model1.plants)),
+                'removed': list(set(model1.plants) - set(model2.plants)),
+                'capacity_changes': {}
+            },
+            'distribution_centers': {
+                'added': list(set(model2.distribution_centers) - set(model1.distribution_centers)),
+                'removed': list(set(model1.distribution_centers) - set(model2.distribution_centers)),
+                'demand_changes': {}
+            },
+            'cost_changes': {}
+        }
+        
+        # Check for capacity changes in common plants
+        common_plants = set(model1.plants) & set(model2.plants)
+        for plant in common_plants:
+            if model1.capacity.get(plant) != model2.capacity.get(plant):
+                differences['plants']['capacity_changes'][plant] = (
+                    model1.capacity.get(plant),
+                    model2.capacity.get(plant)
+                )
+        
+        # Check for demand changes in common distribution centers
+        common_dcs = set(model1.distribution_centers) & set(model2.distribution_centers)
+        for dc in common_dcs:
+            if model1.demand.get(dc) != model2.demand.get(dc):
+                differences['distribution_centers']['demand_changes'][dc] = (
+                    model1.demand.get(dc),
+                    model2.demand.get(dc)
+                )
+        
+        # Check for cost changes
+        for plant in common_plants:
+            for dc in common_dcs:
+                cost1 = model1.costs.get(plant, {}).get(dc)
+                cost2 = model2.costs.get(plant, {}).get(dc)
+                if cost1 != cost2:
+                    if plant not in differences['cost_changes']:
+                        differences['cost_changes'][plant] = {}
+                    differences['cost_changes'][plant][dc] = (cost1, cost2)
+        
+        return differences
+
 # Example usage
 if __name__ == "__main__":
     # Create model instance
@@ -152,3 +241,10 @@ if __name__ == "__main__":
     
     # Solve and print results
     print(model.get_solution_summary())
+
+    # Create a copy of the model
+    model_copy = model.copy()
+
+    # Compare the two models
+    differences = NetworkOptimization.compare_models(model, model_copy)
+    print(differences)
