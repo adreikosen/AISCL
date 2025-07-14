@@ -463,13 +463,9 @@ def chat_with_ai(user_input: str, messages: List[Dict] = None) -> str:
     except Exception as e:
         return f"An unexpected error occurred: {str(e)}. Please try again later."
 
+initialize_model()
 def main():
     """Main function to run the chatbot."""
-    global model
-    
-    # Initialize the model
-    initialize_model()
-    
     print("Hello I am Kit your friendly network optimization chatbot!")
     print("You can add plants, distribution centers, set shipping costs, and solve the optimization problem.")
     print("Type 'exit' to quit.\n")
