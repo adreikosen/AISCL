@@ -16,22 +16,35 @@ model = None
 snapshots = {}
 
 def initialize_model():
-    """Initialize the model with default values."""
+    """Initialize the model with default values using US cities."""
     global model
-    model = NetworkOptimization("Base_Model")
+    model = NetworkOptimization("US_Base_Model")
     
-    # Default model setup
-    model.add_plant("Ahmedabad", 4800)
-    model.add_plant("Patna", 3500)
-    model.add_plant("Hyderabad", 2200)
-    model.add_distribution_center("Bhopal", 4800)
-    model.add_distribution_center("Indore", 5700)
-    model.set_shipping_cost("Ahmedabad", "Bhopal", 16500)
-    model.set_shipping_cost("Ahmedabad", "Indore", 10600)
-    model.set_shipping_cost("Patna", "Bhopal", 12200)
-    model.set_shipping_cost("Patna", "Indore", 12600)
-    model.set_shipping_cost("Hyderabad", "Bhopal", 10300)
-    model.set_shipping_cost("Hyderabad", "Indore", 9240)
+    # Add plants (manufacturing facilities) with production capacities (in units)
+    model.add_plant("Chicago_IL", 10000)    # Major manufacturing hub in the Midwest
+    model.add_plant("Houston_TX", 8500)     # Major industrial center in the South
+    model.add_plant("LosAngeles_CA", 9500)  # Major West Coast manufacturing center
+    
+    # Add distribution centers with demand (in units)
+    model.add_distribution_center("NewYork_NY", 8000)    # High population density
+    model.add_distribution_center("Atlanta_GA", 6000)    # Major logistics hub in the Southeast
+    model.add_distribution_center("Denver_CO", 4000)     # Central location for Western distribution
+    
+    # Set shipping costs (in dollars per unit)
+    # Chicago to DCs
+    model.set_shipping_cost("Chicago_IL", "NewYork_NY", 1200)   # ~800 miles
+    model.set_shipping_cost("Chicago_IL", "Atlanta_GA", 900)    # ~600 miles
+    model.set_shipping_cost("Chicago_IL", "Denver_CO", 1000)    # ~1000 miles
+    
+    # Houston to DCs
+    model.set_shipping_cost("Houston_TX", "NewYork_NY", 1500)   # ~1400 miles
+    model.set_shipping_cost("Houston_TX", "Atlanta_GA", 800)    # ~700 miles
+    model.set_shipping_cost("Houston_TX", "Denver_CO", 1200)    # ~900 miles
+    
+    # Los Angeles to DCs
+    model.set_shipping_cost("LosAngeles_CA", "NewYork_NY", 2500) # ~2800 miles
+    model.set_shipping_cost("LosAngeles_CA", "Atlanta_GA", 2000) # ~2200 miles
+    model.set_shipping_cost("LosAngeles_CA", "Denver_CO", 1000)  # ~1000 miles
 
 def create_snapshot(snapshot_name: str = None) -> str:
     """
@@ -124,6 +137,28 @@ def list_snapshots() -> str:
     if not snapshots:
         return "No snapshots available."
     return "Available snapshots:\n" + "\n".join(f"- {name}" for name in snapshots.keys())
+
+def restore_snapshot(snapshot_name: str) -> str:
+    """
+    Restore the model state from a previously saved snapshot.
+    
+    Args:
+        snapshot_name (str): Name of the snapshot to restore
+        
+    Returns:
+        str: Confirmation message with the snapshot name
+    """
+    global model, snapshots
+    if snapshot_name not in snapshots:
+        return f"Error: No snapshot found with name '{snapshot_name}'"
+    
+    # Create a copy of the current state before restoring
+    backup_name = f"pre_restore_{len(snapshots) + 1}"
+    snapshots[backup_name] = model.copy(backup_name)
+    
+    # Restore the snapshot
+    model = snapshots[snapshot_name]
+    return f"Successfully restored model state from snapshot '{snapshot_name}'. Previous state saved as '{backup_name}'."
 
 def get_available_functions() -> List[Dict]:
     """Return the available functions for the AI to call."""
@@ -259,22 +294,6 @@ def get_available_functions() -> List[Dict]:
         {
             "type": "function",
             "function": {
-                "name": "create_snapshot",
-                "description": "Create a snapshot of the current model state for later comparison",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "snapshot_name": {
-                            "type": "string",
-                            "description": "Name for the snapshot. If not provided, a default name will be generated"
-                        }
-                    }
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
                 "name": "compare_with_snapshot",
                 "description": "Compare the current model with a previously saved snapshot",
                 "parameters": {
@@ -295,6 +314,23 @@ def get_available_functions() -> List[Dict]:
                 "name": "list_snapshots",
                 "description": "List all saved snapshots",
                 "parameters": {"type": "object", "properties": {}}
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "restore_snapshot",
+                "description": "Restore the model state from a previously saved snapshot",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "snapshot_name": {
+                            "type": "string",
+                            "description": "Name of the snapshot to restore"
+                        }
+                    },
+                    "required": ["snapshot_name"]
+                }
             }
         }
     ]
@@ -319,9 +355,9 @@ def execute_function_call(function_name: str, function_args: Dict[str, Any]) -> 
             return f"Set shipping cost from {function_args['plant']} to {function_args['dc']} to {function_args['cost']}"
             
         elif function_name == "solve_optimization":
+            solution = model.solve()
             snapshot_name = f"pre_solve_{len(snapshots) + 1}"
             create_snapshot(snapshot_name)
-            solution = model.solve()
             return f"Optimization complete. {solution}"
             
         elif function_name == "get_model_info":
@@ -331,11 +367,11 @@ def execute_function_call(function_name: str, function_args: Dict[str, Any]) -> 
             capacity = model.capacity
             demand = model.demand
             return f"""Current Model State:
-Plants: {plants}
-Distribution Centers: {distribution_centers}
-Shipping Costs: {shipping_costs}
-Capacity: {capacity}
-Demand: {demand}"""
+                Plants: {plants}
+                Distribution Centers: {distribution_centers}
+                Shipping Costs: {shipping_costs}
+                Capacity: {capacity}
+                Demand: {demand}"""
             
         elif function_name == "update_capacity":
             model.update_capacity(function_args["name"], function_args["capacity"])
@@ -357,14 +393,14 @@ Demand: {demand}"""
             model.clear_model()
             return "Model cleared successfully"
             
-        elif function_name == "create_snapshot":
-            return create_snapshot(function_args.get("snapshot_name"))
-            
         elif function_name == "compare_with_snapshot":
             return compare_with_snapshot(function_args["snapshot_name"])
             
         elif function_name == "list_snapshots":
             return list_snapshots()
+            
+        elif function_name == "restore_snapshot":
+            return restore_snapshot(function_args["snapshot_name"])
             
         else:        
             return f"Unknown function: {function_name}"
@@ -446,8 +482,7 @@ def main():
     messages = [{
         "role": "system",
         "content": """You are a helpful assistant for network optimization. You can help users model and solve network optimization problems in supply chain. 
-        You can also help users create and compare different scenarios by taking snapshots of the model at different points in time.
-        When comparing models, make sure to highlight the key differences and their business implications. A base model has been preloaded into the system."""
+        You can also help users create and compare different scenarios by taking snapshots of the model at different points in time. When comparing models, make sure to highlight the key differences and their business implications for stakeholders. A base model has been preloaded into the system."""
     }]
     
     while True:
@@ -459,7 +494,6 @@ def main():
                 
             response = chat_with_ai(user_input, messages)
             print(f"\nKit: {response}")
-            print(snapshots)
             
         except KeyboardInterrupt:
             print("\n\nGoodbye! Thanks for using Kit. Have a great day!")
