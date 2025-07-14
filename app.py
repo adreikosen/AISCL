@@ -31,17 +31,12 @@ def initialize_model():
     model.add_distribution_center("Denver_CO", 4000)     # Central location for Western distribution
     
     # Set shipping costs (in dollars per unit)
-    # Chicago to DCs
     model.set_shipping_cost("Chicago_IL", "NewYork_NY", 1200)   # ~800 miles
     model.set_shipping_cost("Chicago_IL", "Atlanta_GA", 900)    # ~600 miles
     model.set_shipping_cost("Chicago_IL", "Denver_CO", 1000)    # ~1000 miles
-    
-    # Houston to DCs
     model.set_shipping_cost("Houston_TX", "NewYork_NY", 1500)   # ~1400 miles
     model.set_shipping_cost("Houston_TX", "Atlanta_GA", 800)    # ~700 miles
     model.set_shipping_cost("Houston_TX", "Denver_CO", 1200)    # ~900 miles
-    
-    # Los Angeles to DCs
     model.set_shipping_cost("LosAngeles_CA", "NewYork_NY", 2500) # ~2800 miles
     model.set_shipping_cost("LosAngeles_CA", "Atlanta_GA", 2000) # ~2200 miles
     model.set_shipping_cost("LosAngeles_CA", "Denver_CO", 1000)  # ~1000 miles
