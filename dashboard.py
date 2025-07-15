@@ -15,7 +15,7 @@ from model import NetworkOptimization
 from app import (
     model as app_model,
     chat_with_ai,
-    add_distribution_center_with_geocoding,
+    add_store_with_geocoding,
     add_plant_with_geocoding
 )
 
@@ -279,7 +279,7 @@ def create_map():
 
 def add_new_node():
     with st.expander("Add New Node"):
-        node_type = st.selectbox("Node Type", ["Plant", "Distribution Center"])
+        node_type = st.selectbox("Node Type", ["Plant", "Store"])
         name = st.text_input("Node Name")
         city = st.text_input("City")
         state = st.text_input("State/Region")
@@ -292,8 +292,8 @@ def add_new_node():
                 st.rerun()
         else:
             demand = st.number_input("Demand", min_value=0)
-            if st.button("Add Distribution Center"):
-                result = add_distribution_center_with_geocoding(name, demand, city, state)
+            if st.button("Add Store"):
+                result = add_store_with_geocoding(name, demand, city, state)
                 st.success(result)
                 st.rerun()
 
