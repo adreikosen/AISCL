@@ -13,11 +13,10 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from model import NetworkOptimization
 from app import (
-    initialize_model,
     model as app_model,
     chat_with_ai,
-    get_available_functions,
-    execute_function_call
+    add_distribution_center_with_geocoding,
+    add_plant_with_geocoding
 )
 
 # Load environment variables
@@ -28,11 +27,12 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # Geographic coordinates for the cities (latitude, longitude)
 CITY_COORDINATES = {
-    "Ahmedabad": (23.0225, 72.5714),
-    "Patna": (25.5941, 85.1376),
-    "Hyderabad": (17.3850, 78.4867),
-    "Bhopal": (23.2599, 77.4126),
-    "Indore": (22.7196, 75.8577)
+    "Chicago_IL": (41.8781, -87.6298),
+    "Houston_TX": (29.7604, -95.3698),
+    "LosAngeles_CA": (34.0522, -118.2437),
+    "NewYork_NY": (40.7128, -74.0060),
+    "Atlanta_GA": (33.7490, -84.3880),
+    "Denver_CO": (39.7392, -104.9903)
 }
 
 # Set page config
@@ -108,16 +108,30 @@ def run_model_command(command):
                 When comparing models, make sure to highlight the key differences and their business implications. A base model has been preloaded into the system."""
             }]
         
-        # Get response from the AI - chat_with_ai will handle adding the user message
+        # Get AI response
         response = chat_with_ai(command, st.session_state.chat_messages)
         
-        # The response should already be a string from chat_with_ai
-        response_content = str(response)
+        # Update chat messages
+        st.session_state.chat_messages.append({
+            "role": "user",
+            "content": command
+        })
         
-        # The chat_with_ai function now handles adding messages to the history
-        # So we just need to ensure the last message is from the assistant
-        if st.session_state.chat_messages and st.session_state.chat_messages[-1].get('role') != 'assistant':
-            # If for some reason the last message isn't from the assistant, add it
+        # Add AI response to chat history
+        if isinstance(response, str):
+            response_content = response
+        elif hasattr(response, 'content'):
+            response_content = response.content
+        else:
+            response_content = str(response)
+            
+        st.session_state.chat_messages.append({
+            "role": "assistant",
+            "content": response_content
+        })
+        
+        # If for some reason the last message isn't from the assistant, add it
+        if not st.session_state.chat_messages or st.session_state.chat_messages[-1]["role"] != "assistant":
             st.session_state.chat_messages.append({
                 "role": "assistant",
                 "content": response_content
@@ -131,8 +145,8 @@ def run_model_command(command):
             st.session_state.chat_messages.append({"role": "assistant", "content": error_msg})
         return error_msg
 
-# Function to get model data
 def get_model_data():
+    """Extract data from the model for visualization."""
     try:
         # Check if model is initialized
         if not hasattr(st.session_state, 'model') or st.session_state.model is None:
@@ -208,10 +222,9 @@ def get_model_data():
         st.error(f"Error in get_model_data: {str(e)}\n\nTraceback:\n{traceback.format_exc()}")
         return None
 
-# Function to create folium map
 def create_map():
-    # Create a base map centered on India (where the default plants/DCs are located)
-    m = folium.Map(location=[20.5937, 78.9629], zoom_start=5)
+    # Create a base map centered on the United States
+    m = folium.Map(location=[39.8283, -98.5795], zoom_start=4)  # Centered on the geographic center of the US
     
     # Add drawing tools
     Draw(export=True).add_to(m)
@@ -222,29 +235,17 @@ def create_map():
         st.warning("No model data available. Please initialize the model first.")
         return m
     
-    # Define city coordinates
-    CITY_COORDINATES = {
-        "Ahmedabad": (23.0225, 72.5714),
-        "Patna": (25.5941, 85.1376),
-        "Hyderabad": (17.3850, 78.4867),
-        "Bhopal": (23.2599, 77.4126),
-        "Indore": (22.7196, 75.8577)
-    }
-    
-    # Add nodes to the map
+    # Add nodes to the map using model-provided locations
     for node in model_data['nodes']:
         node_id = node['id']
-        # Use saved location, then city coordinates, or default to center of India
-        if node_id in st.session_state.locations:
-            loc = st.session_state.locations[node_id]
-        elif node_id in CITY_COORDINATES:
-            loc = CITY_COORDINATES[node_id]
-            st.session_state.locations[node_id] = loc  # Save to session state
+        # Get location from model locations
+        if node_id in st.session_state.model.locations:
+            loc = (st.session_state.model.locations[node_id]['lat'], 
+                   st.session_state.model.locations[node_id]['lon'])
         else:
-            # Default to center of India if city not in our coordinates
-            loc = (20.5937, 78.9629)
-            st.session_state.locations[node_id] = loc
-        
+            # If no location is set, use default coordinates
+            loc = (39.8283, -98.5795)
+            
         # Add marker with popup
         popup = f"<b>{node['id']}</b><br>"
         if node['type'] == 'plant':
@@ -262,11 +263,12 @@ def create_map():
         ).add_to(m)
     
     # Add edges to the map
-    model_data = get_model_data()
     for edge in model_data['edges']:
-        if edge['from'] in st.session_state.locations and edge['to'] in st.session_state.locations:
+        from_loc = st.session_state.model.locations.get(edge['from'])
+        to_loc = st.session_state.model.locations.get(edge['to'])
+        if from_loc and to_loc:
             folium.PolyLine(
-                locations=[st.session_state.locations[edge['from']], st.session_state.locations[edge['to']]],
+                locations=[(from_loc['lat'], from_loc['lon']), (to_loc['lat'], to_loc['lon'])],
                 color='gray',
                 weight=2,
                 opacity=0.7,
@@ -275,7 +277,26 @@ def create_map():
     
     return m
 
-# Function to create plotly network graph
+def add_new_node():
+    with st.expander("Add New Node"):
+        node_type = st.selectbox("Node Type", ["Plant", "Distribution Center"])
+        name = st.text_input("Node Name")
+        city = st.text_input("City")
+        state = st.text_input("State/Region")
+        
+        if node_type == "Plant":
+            capacity = st.number_input("Capacity", min_value=0)
+            if st.button("Add Plant"):
+                result = add_plant_with_geocoding(name, capacity, city, state)
+                st.success(result)
+                st.rerun()
+        else:
+            demand = st.number_input("Demand", min_value=0)
+            if st.button("Add Distribution Center"):
+                result = add_distribution_center_with_geocoding(name, demand, city, state)
+                st.success(result)
+                st.rerun()
+
 def create_plotly_graph():
     model_data = get_model_data()
     if not model_data:
@@ -287,10 +308,11 @@ def create_plotly_graph():
     node_text = []
     node_colors = []
     node_sizes = []
-    
+
     for node in model_data['nodes']:
-        if node['id'] in st.session_state.locations:
-            loc = st.session_state.locations[node['id']]
+        if node['id'] in st.session_state.model.locations:
+            loc = (st.session_state.model.locations[node['id']]['lat'], 
+                   st.session_state.model.locations[node['id']]['lon'])
             node_x.append(loc[1])  # lng
             node_y.append(loc[0])   # lat
         else:
@@ -307,12 +329,12 @@ def create_plotly_graph():
     edge_text = []
     
     for edge in model_data['edges']:
-        if edge['from'] in st.session_state.locations and edge['to'] in st.session_state.locations:
-            from_loc = st.session_state.locations[edge['from']]
-            to_loc = st.session_state.locations[edge['to']]
+        if edge['from'] in st.session_state.model.locations and edge['to'] in st.session_state.model.locations:
+            from_loc = st.session_state.model.locations[edge['from']]
+            to_loc = st.session_state.model.locations[edge['to']]
             
-            edge_x.extend([from_loc[1], to_loc[1], None])
-            edge_y.extend([from_loc[0], to_loc[0], None])
+            edge_x.extend([from_loc['lon'], to_loc['lon'], None])
+            edge_y.extend([from_loc['lat'], to_loc['lat'], None])
             edge_text.append(edge['label'])
     
     # Create edge traces
@@ -352,7 +374,6 @@ def create_plotly_graph():
     
     return fig
 
-# Main app layout
 def main():
     st.title("Network Optimization Dashboard")
     
@@ -372,14 +393,23 @@ def main():
             "content": "Hello! I'm your supply chain optimization assistant. How can I help you today?"
         }]
     
-    # Ensure all messages are in dict format
-    st.session_state.chat_messages = [
-        msg if isinstance(msg, dict) else msg.dict() 
-        for msg in st.session_state.chat_messages
-    ]
+    # Ensure chat messages are plain dictionaries (avoid Pydantic deprecation)
+    def _to_dict(m):
+        if isinstance(m, dict):
+            return m
+        # Prefer `model_dump` (Pydantic ≥2)
+        if hasattr(m, "model_dump"):
+            return m.model_dump()
+        # Fallback to legacy `dict()`
+        if hasattr(m, "dict"):
+            return m.dict()
+        # Last resort
+        return vars(m)
+
+    st.session_state.chat_messages = [_to_dict(msg) for msg in st.session_state.chat_messages]
     
     # Add a manual refresh button
-    if st.sidebar.button("🔄 Refresh Model Data"):
+    if st.sidebar.button(" Refresh Model Data"):
         st.session_state.last_refresh = time.time()
         st.rerun()
     
@@ -399,29 +429,13 @@ def main():
     tab1, tab2 = st.tabs(["Map View", "Network Graph"])
     
     with tab1:
+        # Add new node UI
+        add_new_node()
+        
         # Create and display map if we have model data
         if model_data and 'nodes' in model_data and model_data['nodes']:
             m = create_map()
-            
-            # Display the map
-            st_data = st_folium(m, width=1200, height=600)
-            
-            # Handle map interactions
-            if st_data and st_data.get("last_active_drawing"):
-                drawing = st_data["last_active_drawing"]
-                if drawing and "properties" in drawing and "feature" in st.session_state:
-                    node_id = st.session_state.feature
-                    try:
-                        lat = drawing["geometry"]["coordinates"][1]
-                        lon = drawing["geometry"]["coordinates"][0]
-                        # Update both session state and CITY_COORDINATES
-                        st.session_state.locations[node_id] = (lat, lon)
-                        if node_id not in CITY_COORDINATES:
-                            # Add a warning that this is a new city that should be added to CITY_COORDINATES
-                            st.warning(f"City '{node_id}' is not in the coordinates database. Consider adding it to CITY_COORDINATES.")
-                        st.rerun()
-                    except (KeyError, IndexError) as e:
-                        st.error(f"Error updating node location: {str(e)}")
+            st_folium(m, width=1200, height=600)
         else:
             st.warning("No nodes available to display on the map.")
     
@@ -451,91 +465,27 @@ def main():
             except Exception as e:
                 st.error(f"Error calculating model metrics: {str(e)}")
         
-        # Node selection for moving on map
-        st.subheader("Move Node on Map")
-        if model_data and 'nodes' in model_data and model_data['nodes']:
-            node_options = [node['id'] for node in model_data['nodes']]
-            selected_node = st.selectbox("Select a node to move:", [""] + node_options, key="node_selector_sidebar")
-            if selected_node:
-                st.session_state.feature = selected_node
-                st.info(f"Click on the map to move {selected_node} to a new location")
-        else:
-            st.warning("No nodes available for movement.")
-        
-    # Chat interface in the sidebar
-    with st.sidebar:
+        # Chat interface
         st.subheader("Chat with the AI")
         
-        # Add CSS to make the chat area scrollable
-        st.markdown("""
-        <style>
-            .chat-container {
-                display: flex;
-                flex-direction: column;
-                height: calc(100vh - 200px);
-            }
-            .chat-messages {
-                flex: 1;
-                overflow-y: auto;
-                padding-right: 10px;
-                margin-bottom: 10px;
-                border: 1px solid #e0e0e0;
-                border-radius: 8px;
-                padding: 10px;
-                background: #f9f9f9;
-            }
-            .stChatInput {
-                position: sticky;
-                bottom: 0;
-                background: white;
-                padding: 10px 0;
-                z-index: 100;
-            }
-        </style>
-        """, unsafe_allow_html=True)
+        # Chat history
+        for idx, message in enumerate(st.session_state.chat_messages):
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
         
-        
-        # Display chat messages
-        for message in st.session_state.chat_messages:
-            # Convert to dict if needed (for OpenAI message objects)
-            if hasattr(message, 'dict'):
-                msg_dict = message.dict()
-            else:
-                msg_dict = message
+        # User input
+        if prompt := st.chat_input("What would you like to know about the network?"):
+            with st.chat_message("user"):
+                st.markdown(prompt)
             
-            # Skip system messages or messages without role/content
-            if not msg_dict or not isinstance(msg_dict, dict):
-                continue
-                
-            role = msg_dict.get("role")
-            content = msg_dict.get("content")
+            # Get AI response
+            response = chat_with_ai(prompt, st.session_state.chat_messages)
+            with st.chat_message("assistant"):
+                st.markdown(response)
             
-            # Only display non-system messages with content
-            if role != "system" and content:
-                with st.chat_message(role):
-                    st.markdown(content)
-        
-        st.markdown('</div>', unsafe_allow_html=True)  # Close chat-messages
-        
-        # Chat input at the bottom of the sidebar
-        if prompt := st.chat_input("What would you like to do?"):
-            if not prompt.strip():
-                st.warning("Please enter a valid command.")
-            else:
-                try:
-                    # Just call run_model_command - it will handle adding messages to history
-                    response = run_model_command(prompt)
-                    
-                except Exception as e:
-                    error_msg = f"Error processing command: {str(e)}"
-                    st.error(error_msg)
-                    st.session_state.chat_messages.append({"role": "assistant", "content": error_msg})
-                
-                # Rerun to update the UI
-                st.rerun()
-        
-        st.markdown('</div>', unsafe_allow_html=True)  # Close chat-container
-        
+            # Update chat history
+            st.session_state.chat_messages.append({"role": "user", "content": prompt})
+            st.session_state.chat_messages.append({"role": "assistant", "content": response})
 
 def update_city_coordinates(city_name, lat, lon):
     """Update the coordinates for a city in the CITY_COORDINATES dictionary.

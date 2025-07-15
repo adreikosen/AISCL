@@ -1,8 +1,9 @@
 from dotenv import load_dotenv
 import os
 import json
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Tuple
 from openai import OpenAI
+import requests
 from model import NetworkOptimization
 
 # Load environment variables
@@ -15,20 +16,132 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 model = None
 snapshots = {}
 
+def geocode_location(location_name: str) -> Optional[Tuple[float, float]]:
+    """
+    Look up latitude and longitude for a location name using Nominatim geocoding service.
+    
+    Args:
+        location_name (str): Name of the location to geocode (e.g., "Chicago, IL")
+        
+    Returns:
+        Optional[Tuple[float, float]]: (latitude, longitude) if found, None otherwise
+    """
+    try:
+        base_url = "https://nominatim.openstreetmap.org/search"
+        params = {
+            'q': location_name,
+            'format': 'json',
+            'limit': 1
+        }
+        
+        headers = {
+            'User-Agent': 'NetworkOptimizationApp/1.0'  # Required by Nominatim usage policy
+        }
+        
+        response = requests.get(base_url, params=params, headers=headers)
+        response.raise_for_status()
+        
+        data = response.json()
+        if data and len(data) > 0:
+            return float(data[0]['lat']), float(data[0]['lon'])
+            
+    except Exception as e:
+        print(f"Error geocoding location {location_name}: {str(e)}")
+    
+    return None
+
+def add_plant_with_geocoding(name: str, capacity: int, city: str = None, state: str = None) -> str:
+    """
+    Add a plant with automatic geocoding of its location.
+    
+    Args:
+        name (str): Name of the plant
+        capacity (int): Production capacity
+        city (str, optional): City name for geocoding
+        state (str, optional): State/region name for more accurate geocoding
+        
+    Returns:
+        str: Status message
+    """
+    global model
+    if model is None:
+        return "Error: Model not initialized"
+    
+    try:
+        # Try to geocode the location if city is provided
+        lat, lon = None, None
+        if city:
+            location_query = f"{city}"
+            if state:
+                location_query += f", {state}"
+            coords = geocode_location(location_query)
+            if coords:
+                lat, lon = coords
+        
+        # Add the plant with or without location data
+        model.add_plant(name, capacity, lat, lon)
+        
+        if lat is not None and lon is not None:
+            return f"Added plant '{name}' with capacity {capacity} at location ({lat:.4f}, {lon:.4f})"
+        else:
+            return f"Added plant '{name}' with capacity {capacity} (location not set)"
+            
+    except Exception as e:
+        return f"Error adding plant: {str(e)}"
+
+def add_distribution_center_with_geocoding(name: str, demand: int, city: str = None, state: str = None) -> str:
+    """
+    Add a distribution center with automatic geocoding of its location.
+    
+    Args:
+        name (str): Name of the distribution center
+        demand (int): Demand amount
+        city (str, optional): City name for geocoding
+        state (str, optional): State/region name for more accurate geocoding
+        
+    Returns:
+        str: Status message
+    """
+    global model
+    if model is None:
+        return "Error: Model not initialized"
+    
+    try:
+        # Try to geocode the location if city is provided
+        lat, lon = None, None
+        if city:
+            location_query = f"{city}"
+            if state:
+                location_query += f", {state}"
+            coords = geocode_location(location_query)
+            if coords:
+                lat, lon = coords
+        
+        # Add the distribution center with or without location data
+        model.add_distribution_center(name, demand, lat, lon)
+        
+        if lat is not None and lon is not None:
+            return f"Added distribution center '{name}' with demand {demand} at location ({lat:.4f}, {lon:.4f})"
+        else:
+            return f"Added distribution center '{name}' with demand {demand} (location not set)"
+            
+    except Exception as e:
+        return f"Error adding distribution center: {str(e)}"
+
 def initialize_model():
     """Initialize the model with default values using US cities."""
     global model
     model = NetworkOptimization("US_Base_Model")
     
-    # Add plants (manufacturing facilities) with production capacities (in units)
-    model.add_plant("Chicago_IL", 10000)    # Major manufacturing hub in the Midwest
-    model.add_plant("Houston_TX", 8500)     # Major industrial center in the South
-    model.add_plant("LosAngeles_CA", 9500)  # Major West Coast manufacturing center
+    # Add plants (manufacturing facilities) with production capacities (in units) and locations
+    model.add_plant("Chicago_IL", 10000, lat=41.8781, lon=-87.6298)    # Major manufacturing hub in the Midwest
+    model.add_plant("Houston_TX", 8500, lat=29.7604, lon=-95.3698)     # Major industrial center in the South
+    model.add_plant("LosAngeles_CA", 9500, lat=34.0522, lon=-118.2437)  # Major West Coast manufacturing center
     
-    # Add distribution centers with demand (in units)
-    model.add_distribution_center("NewYork_NY", 8000)    # High population density
-    model.add_distribution_center("Atlanta_GA", 6000)    # Major logistics hub in the Southeast
-    model.add_distribution_center("Denver_CO", 4000)     # Central location for Western distribution
+    # Add distribution centers with demand (in units) and locations
+    model.add_distribution_center("NewYork_NY", 8000, lat=40.7128, lon=-74.0060)    # High population density
+    model.add_distribution_center("Atlanta_GA", 6000, lat=33.7490, lon=-84.3880)    # Major logistics hub in the Southeast
+    model.add_distribution_center("Denver_CO", 4000, lat=39.7392, lon=-104.9903)     # Central location for Western distribution
     
     # Set shipping costs (in dollars per unit)
     model.set_shipping_cost("Chicago_IL", "NewYork_NY", 1200)   # ~800 miles
@@ -161,13 +274,15 @@ def get_available_functions() -> List[Dict]:
         {
             "type": "function",
             "function": {
-                "name": "add_plant",
-                "description": "Add a new plant with its capacity",
+                "name": "add_plant_with_geocoding",
+                "description": "Add a new manufacturing plant with automatic geocoding of its location",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "name": {"type": "string", "description": "Name of the plant"},
-                        "capacity": {"type": "number", "description": "Production capacity of the plant"}
+                        "capacity": {"type": "integer", "description": "Production capacity of the plant"},
+                        "city": {"type": "string", "description": "City where the plant is located"},
+                        "state": {"type": "string", "description": "State/region where the plant is located"}
                     },
                     "required": ["name", "capacity"]
                 }
@@ -176,18 +291,50 @@ def get_available_functions() -> List[Dict]:
         {
             "type": "function",
             "function": {
-                "name": "add_distribution_center",
-                "description": "Add a new distribution center with its demand",
+                "name": "add_distribution_center_with_geocoding",
+                "description": "Add a new distribution center with automatic geocoding of its location",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "name": {"type": "string", "description": "Name of the distribution center"},
-                        "demand": {"type": "number", "description": "Demand of the distribution center"}
+                        "demand": {"type": "integer", "description": "Demand of the distribution center"},
+                        "city": {"type": "string", "description": "City where the distribution center is located"},
+                        "state": {"type": "string", "description": "State/region where the distribution center is located"}
                     },
                     "required": ["name", "demand"]
                 }
             }
         },
+        # {
+        #     "type": "function",
+        #     "function": {
+        #         "name": "add_plant",
+        #         "description": "Add a new plant with its capacity",
+        #         "parameters": {
+        #             "type": "object",
+        #             "properties": {
+        #                 "name": {"type": "string", "description": "Name of the plant"},
+        #                 "capacity": {"type": "number", "description": "Production capacity of the plant"}
+        #             },
+        #             "required": ["name", "capacity"]
+        #         }
+        #     }
+        # },
+        # {
+        #     "type": "function",
+        #     "function": {
+        #         "name": "add_distribution_center",
+        #         "description": "Add a new distribution center with its demand",
+        #         "parameters": {
+        #             "type": "object",
+        #             "properties": {
+        #                 "name": {"type": "string", "description": "Name of the distribution center"},
+        #                 "demand": {"type": "number", "description": "Demand of the distribution center"}
+        #             },
+        #             "required": ["name", "demand"]
+        #         }
+        #     }
+        # },
         {
             "type": "function",
             "function": {
@@ -331,15 +478,19 @@ def get_available_functions() -> List[Dict]:
     ]
 
 def execute_function_call(function_name: str, function_args: Dict[str, Any]) -> str:
-    """Execute the function call and return the result as a string."""
+    """Execute a function call and return the result as a string."""
     try:
-        if function_name == "add_plant":
-            model.add_plant(function_args["name"], function_args["capacity"])
-            return f"Added plant {function_args['name']} with capacity {function_args['capacity']}"
+        if function_name == "add_plant_with_geocoding":
+            return add_plant_with_geocoding(**function_args)
+        elif function_name == "add_distribution_center_with_geocoding":
+            return add_distribution_center_with_geocoding(**function_args)
+        # elif function_name == "add_plant":
+        #     model.add_plant(function_args["name"], function_args["capacity"])
+        #     return f"Added plant {function_args['name']} with capacity {function_args['capacity']}"
             
-        elif function_name == "add_distribution_center":
-            model.add_distribution_center(function_args["name"], function_args["demand"])
-            return f"Added distribution center {function_args['name']} with demand {function_args['demand']}"
+        # elif function_name == "add_distribution_center":
+        #     model.add_distribution_center(function_args["name"], function_args["demand"])
+        #     return f"Added distribution center {function_args['name']} with demand {function_args['demand']}"
             
         elif function_name == "set_shipping_cost":
             model.set_shipping_cost(
