@@ -19,6 +19,7 @@ class NetworkOptimization:
         self.demand = {}          # dc -> demand
         self.costs = {}           # (plant, dc) -> cost/unit
         self.ship = {}            # Decision variables
+        self.locations = {}       # node -> {'lat': float, 'lon': float}
         #fixed variable for cost for plant ops
         #variable cost for plant ops
         
@@ -31,34 +32,88 @@ class NetworkOptimization:
         self.demand = {}
         self.costs = {}
         self.ship = {}
-    def add_plant(self, name, capacity):
-        """Add a plant with its capacity."""
+        self.locations = {}
+        
+    def add_plant(self, name, capacity, lat=None, lon=None, **kwargs):
+        """
+        Add a plant with its capacity and optional location.
+        
+        Args:
+            name (str): Name of the plant
+            capacity (float): Production capacity of the plant
+            lat (float, optional): Latitude of the plant location
+            lon (float, optional): Longitude of the plant location
+            **kwargs: For backward compatibility
+        """
         self.plants.append(name)
         self.capacity[name] = capacity
         self.costs[name] = {}
+        if lat is not None and lon is not None:
+            self.set_location(name, lat, lon)
         # Initialize costs for all existing distribution centers
         for dc in self.distribution_centers:
             self.costs[name][dc] = 0  # Initialize cost to 0
+    
     def remove_plant(self, name):
         """Remove a plant."""
         self.plants.remove(name)
         del self.capacity[name]
         del self.costs[name]
+        if name in self.locations:
+            del self.locations[name]
+        
     def remove_distribution_center(self, name):
         """Remove a distribution center."""
         self.distribution_centers.remove(name)
         del self.demand[name]
         for plant in self.plants:
             del self.costs[plant][name]
-    def add_distribution_center(self, name, demand):
-        """Add a distribution center with its demand."""
+        if name in self.locations:
+            del self.locations[name]
+        
+    def add_distribution_center(self, name, demand, lat=None, lon=None, **kwargs):
+        """
+        Add a distribution center with its demand and optional location.
+        
+        Args:
+            name (str): Name of the distribution center
+            demand (float): Demand of the distribution center
+            lat (float, optional): Latitude of the DC location
+            lon (float, optional): Longitude of the DC location
+            **kwargs: For backward compatibility
+        """
         self.distribution_centers.append(name)
         self.demand[name] = demand
+        if lat is not None and lon is not None:
+            self.set_location(name, lat, lon)
         for plant in self.plants:
             if plant not in self.costs:
                 self.costs[plant] = {}
             self.costs[plant][name] = 0  # Initialize cost to 0
+    
+    def set_location(self, node_name, lat, lon):
+        """
+        Set the location (latitude and longitude) for a node.
+        
+        Args:
+            node_name (str): Name of the node (plant or distribution center)
+            lat (float): Latitude of the node
+            lon (float): Longitude of the node
+        """
+        self.locations[node_name] = {'lat': lat, 'lon': lon}
+    
+    def get_location(self, node_name):
+        """
+        Get the location (latitude and longitude) of a node.
+        
+        Args:
+            node_name (str): Name of the node (plant or distribution center)
             
+        Returns:
+            dict: Dictionary with 'lat' and 'lon' keys, or None if not found
+        """
+        return self.locations.get(node_name)
+        
     def set_shipping_cost(self, plant, dc, cost):
         """Set the shipping cost from plant to distribution center."""
         if plant not in self.plants:
@@ -157,6 +212,7 @@ class NetworkOptimization:
         new_model.distribution_centers = self.distribution_centers.copy()
         new_model.capacity = self.capacity.copy()
         new_model.demand = self.demand.copy()
+        new_model.locations = self.locations.copy()
         
         # Deep copy the costs dictionary
         new_model.costs = {}
@@ -228,13 +284,13 @@ if __name__ == "__main__":
     model = NetworkOptimization("Railey_Transportation_Problem")
     
     # Add plants with capacities
-    model.add_plant("Ahmedabad", 4800)
-    model.add_plant("Patna", 3500)
-    model.add_plant("Hyderabad", 2200)
+    model.add_plant("Ahmedabad", 4800, 23.0225, 72.5714)
+    model.add_plant("Patna", 3500, 25.5941, 85.1376)
+    model.add_plant("Hyderabad", 2200, 17.3850, 78.4867)
     
     # Add distribution centers with demands
-    model.add_distribution_center("Bhopal", 4800)
-    model.add_distribution_center("Indore", 5700)
+    model.add_distribution_center("Bhopal", 4800, 23.2599, 77.4126)
+    model.add_distribution_center("Indore", 5700, 22.7196, 75.8577)
     
     # Set shipping costs
     model.set_shipping_cost("Ahmedabad", "Bhopal", 16500)
