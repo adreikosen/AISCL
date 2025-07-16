@@ -15,8 +15,10 @@ from model import NetworkOptimization
 from app import (
     model as app_model,
     chat_with_ai,
-    add_distribution_center_with_geocoding,
-    add_plant_with_geocoding
+    add_store_with_geocoding,
+    add_plant_with_geocoding,
+    add_rdc_with_geocoding,
+    initialize_model
 )
 
 # Load environment variables
@@ -24,16 +26,6 @@ load_dotenv()
 
 # Initialize OpenAI client
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-# Geographic coordinates for the cities (latitude, longitude)
-CITY_COORDINATES = {
-    "Chicago_IL": (41.8781, -87.6298),
-    "Houston_TX": (29.7604, -95.3698),
-    "LosAngeles_CA": (34.0522, -118.2437),
-    "NewYork_NY": (40.7128, -74.0060),
-    "Atlanta_GA": (33.7490, -84.3880),
-    "Denver_CO": (39.7392, -104.9903)
-}
 
 # Set page config
 st.set_page_config(layout="wide", page_title="Network Optimization Dashboard")
@@ -75,7 +67,7 @@ def initialize_dashboard_model():
         if 'model' not in st.session_state or st.session_state.model is None:
             st.session_state.model = app_model
             # Default model setup with error handling
-                
+            initialize_model()
         return True
     except Exception as e:
         st.error(f"Failed to create model instance: {str(e)}")
@@ -122,14 +114,14 @@ def get_model_data():
                     'type': 'plant',
                     'label': f"{plant}\n(Capacity: {capacity})",
                     'size': 15,
-                    'color': 'blue'
+                    'color': 'red'
                 })
             except Exception as e:
                 st.warning(f"Error processing plant {plant}: {str(e)}")
                 continue
         
         # Add distribution centers with error handling
-        for dc in getattr(st.session_state.model, 'distribution_centers', []):
+        for dc in getattr(st.session_state.model, 'stores', []):
             try:
                 demand = getattr(st.session_state.model, 'demand', {}).get(dc, 'N/A')
                 nodes.append({
@@ -140,7 +132,22 @@ def get_model_data():
                     'color': 'green'
                 })
             except Exception as e:
-                st.warning(f"Error processing distribution center {dc}: {str(e)}")
+                st.warning(f"Error processing stores {dc}: {str(e)}")
+                continue
+
+        # Add regional distribution centers with error handling
+        for rdc in getattr(st.session_state.model, 'regional_distribution_centers', []):
+            try:
+                demand = getattr(st.session_state.model, 'demand', {}).get(rdc, 'N/A')
+                nodes.append({
+                    'id': rdc,
+                    'type': 'rdc',
+                    'label': f"{rdc}",
+                    'size': 15,
+                    'color': 'blue'
+                })
+            except Exception as e:
+                st.warning(f"Error processing stores {dc}: {str(e)}")
                 continue
         
         # Add edges with shipping quantities if solution exists
@@ -195,9 +202,12 @@ def create_map():
         popup = f"<b>{node['id']}</b><br>"
         if node['type'] == 'plant':
             popup += f"Type: Plant<br>Capacity: {st.session_state.model.capacity[node['id']]}"
+            icon = folium.Icon(icon='industry', color='red')
+        elif node['type'] == 'rdc':
+            popup += f"Type: RDC"
             icon = folium.Icon(icon='industry', color='blue')
         else:
-            popup += f"Type: Distribution Center<br>Demand: {st.session_state.model.demand[node['id']]}"
+            popup += f"Type: Store<br>Demand: {st.session_state.model.demand[node['id']]}"
             icon = folium.Icon(icon='warehouse', color='green')
         
         folium.Marker(
@@ -224,7 +234,7 @@ def create_map():
 
 def add_new_node():
     with st.expander("Add New Node"):
-        node_type = st.selectbox("Node Type", ["Plant", "Distribution Center"])
+        node_type = st.selectbox("Node Type", ["Plant", "Store", "Regional Distribution Center"])
         name = st.text_input("Node Name")
         city = st.text_input("City")
         state = st.text_input("State/Region")
@@ -235,15 +245,21 @@ def add_new_node():
                 result = add_plant_with_geocoding(name, capacity, city, state)
                 st.success(result)
                 st.rerun()
-        else:
+        elif node_type == "Store":
             demand = st.number_input("Demand", min_value=0)
-            if st.button("Add Distribution Center"):
-                result = add_distribution_center_with_geocoding(name, demand, city, state)
+            if st.button("Add Store Center"):
+                result = add_store_with_geocoding(name, demand, city, state)
+                st.success(result)
+                st.rerun()
+        else:
+            if st.button("Add Regional Distribution Center"):
+                result = add_rdc_with_geocoding(name, city, state)
                 st.success(result)
                 st.rerun()
 
 def create_plotly_graph():
     model_data = get_model_data()
+    print("Nodes:", model_data['nodes'])
     if not model_data:
         return go.Figure()
     
@@ -265,7 +281,11 @@ def create_plotly_graph():
             node_y.append(0)
         
         node_text.append(node['label'])
-        node_colors.append('blue' if node['type'] == 'plant' else 'green')
+        color = None
+        if node['type'] == 'plant': color = 'red'
+        elif node['type'] == 'rdc': color = 'blue'
+        else: color = 'green'
+        node_colors.append(color)
         node_sizes.append(20)
     
     # Create edges
@@ -447,6 +467,4 @@ def update_city_coordinates(city_name, lat, lon):
 
 # Run the app
 if __name__ == "__main__":
-    if 'model' not in st.session_state:
-        initialize_dashboard_model()
     main()

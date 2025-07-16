@@ -89,12 +89,12 @@ def add_plant_with_geocoding(name: str, capacity: int, city: str = None, state: 
     except Exception as e:
         return f"Error adding plant: {str(e)}"
 
-def add_distribution_center_with_geocoding(name: str, demand: int, city: str = None, state: str = None) -> str:
+def add_store_with_geocoding(name: str, demand: int, city: str = None, state: str = None) -> str:
     """
-    Add a distribution center with automatic geocoding of its location.
+    Add a store with automatic geocoding of its location.
     
     Args:
-        name (str): Name of the distribution center
+        name (str): Name of the store
         demand (int): Demand amount
         city (str, optional): City name for geocoding
         state (str, optional): State/region name for more accurate geocoding
@@ -117,16 +117,54 @@ def add_distribution_center_with_geocoding(name: str, demand: int, city: str = N
             if coords:
                 lat, lon = coords
         
-        # Add the distribution center with or without location data
-        model.add_distribution_center(name, demand, lat, lon)
+        # Add the store with or without location data
+        model.add_store(name, demand, lat, lon)
         
         if lat is not None and lon is not None:
-            return f"Added distribution center '{name}' with demand {demand} at location ({lat:.4f}, {lon:.4f})"
+            return f"Added store '{name}' with demand {demand} at location ({lat:.4f}, {lon:.4f})"
         else:
-            return f"Added distribution center '{name}' with demand {demand} (location not set)"
+            return f"Added store '{name}' with demand {demand} (location not set)"
             
     except Exception as e:
-        return f"Error adding distribution center: {str(e)}"
+        return f"Error adding store: {str(e)}"
+
+def add_rdc_with_geocoding(name: str, city: str = None, state: str = None) -> str:
+    """
+    Add a regional distribution center with automatic geocoding of its location.
+    
+    Args:
+        name (str): Name of the RDC
+        city (str, optional): City name for geocoding
+        state (str, optional): State/region name for more accurate geocoding
+        
+    Returns:
+        str: Status message
+    """
+    global model
+    if model is None:
+        return "Error: Model not initialized"
+    
+    try:
+        # Try to geocode the location if city is provided
+        lat, lon = None, None
+        if city:
+            location_query = f"{city}"
+            if state:
+                location_query += f", {state}"
+            coords = geocode_location(location_query)
+            if coords:
+                lat, lon = coords
+        
+        # Add the RDC with or without location data
+        model.add_regional_distribution_center(name, lat, lon)
+        
+        if lat is not None and lon is not None:
+            return f"Added RDC '{name}' at location ({lat:.4f}, {lon:.4f})"
+        else:
+            return f"Added RDC '{name}' (location not set)"
+            
+    except Exception as e:
+        return f"Error adding RDC: {str(e)}"
 
 def initialize_model():
     """Initialize the model with default values using US cities."""
@@ -138,21 +176,31 @@ def initialize_model():
     model.add_plant("Houston_TX", 8500, lat=29.7604, lon=-95.3698)     # Major industrial center in the South
     model.add_plant("LosAngeles_CA", 9500, lat=34.0522, lon=-118.2437)  # Major West Coast manufacturing center
     
-    # Add distribution centers with demand (in units) and locations
-    model.add_distribution_center("NewYork_NY", 8000, lat=40.7128, lon=-74.0060)    # High population density
-    model.add_distribution_center("Atlanta_GA", 6000, lat=33.7490, lon=-84.3880)    # Major logistics hub in the Southeast
-    model.add_distribution_center("Denver_CO", 4000, lat=39.7392, lon=-104.9903)     # Central location for Western distribution
+    # Add Regional Distribution Centers with locations
+    model.add_regional_distribution_center("RDC1_Chicago", lat=41.8781, lon=-87.6298)  # Same as Chicago plant
+    model.add_regional_distribution_center("RDC2_Atlanta", lat=33.7490, lon=-84.3880)  # Major logistics hub
+    model.add_regional_distribution_center("RDC3_Denver", lat=39.7392, lon=-104.9903)  # Central distribution point
     
-    # Set shipping costs (in dollars per unit)
-    model.set_shipping_cost("Chicago_IL", "NewYork_NY", 1200)   # ~800 miles
-    model.set_shipping_cost("Chicago_IL", "Atlanta_GA", 900)    # ~600 miles
-    model.set_shipping_cost("Chicago_IL", "Denver_CO", 1000)    # ~1000 miles
-    model.set_shipping_cost("Houston_TX", "NewYork_NY", 1500)   # ~1400 miles
-    model.set_shipping_cost("Houston_TX", "Atlanta_GA", 800)    # ~700 miles
-    model.set_shipping_cost("Houston_TX", "Denver_CO", 1200)    # ~900 miles
-    model.set_shipping_cost("LosAngeles_CA", "NewYork_NY", 2500) # ~2800 miles
-    model.set_shipping_cost("LosAngeles_CA", "Atlanta_GA", 2000) # ~2200 miles
-    model.set_shipping_cost("LosAngeles_CA", "Denver_CO", 1000)  # ~1000 miles
+    # Add stores with demands (in units) and locations
+    model.add_store("NewYork_NY", 8000, lat=40.7128, lon=-74.0060)    # High population density
+    model.add_store("Miami_FL", 6000, lat=25.7617, lon=-80.1918)      # Major Southeastern hub
+    model.add_store("Seattle_WA", 5000, lat=47.6062, lon=-122.3321)   # Pacific Northwest
+    model.add_store("Dallas_TX", 7000, lat=32.7767, lon=-96.7970)     # Major Texas hub
+    
+    # Set shipping costs from plants to RDCs (in dollars per unit)
+    model.set_shipping_cost("Chicago_IL", "RDC1_Chicago", 500)    # Local transfer
+    model.set_shipping_cost("Chicago_IL", "RDC2_Atlanta", 1200)   # Chicago to Atlanta
+    model.set_shipping_cost("Houston_TX", "RDC2_Atlanta", 800)    # Houston to Atlanta
+    model.set_shipping_cost("Houston_TX", "RDC3_Denver", 1000)    # Houston to Denver
+    model.set_shipping_cost("LosAngeles_CA", "RDC3_Denver", 700)  # LA to Denver
+    model.set_shipping_cost("LosAngeles_CA", "RDC1_Chicago", 1500) # Cross-country
+    
+    # Set shipping costs from RDCs to stores (in dollars per unit)
+    model.set_shipping_cost("RDC1_Chicago", "NewYork_NY", 800)    # Chicago to NYC
+    model.set_shipping_cost("RDC2_Atlanta", "Miami_FL", 600)      # Atlanta to Miami
+    model.set_shipping_cost("RDC2_Atlanta", "Dallas_TX", 500)     # Atlanta to Dallas
+    model.set_shipping_cost("RDC3_Denver", "Seattle_WA", 700)     # Denver to Seattle
+    model.set_shipping_cost("RDC3_Denver", "Dallas_TX", 600)      # Denver to Dallas
 
 def create_snapshot(snapshot_name: str = None) -> str:
     """
@@ -202,23 +250,23 @@ def compare_with_snapshot(snapshot_name: str) -> str:
         for plant, (old_cap, new_cap) in plants['capacity_changes'].items():
             output.append(f"Changed capacity for {plant}: {old_cap} → {new_cap}")
     
-    # Distribution Centers section
-    dcs = differences['distribution_centers']
-    if dcs['added'] or dcs['removed'] or dcs['demand_changes']:
-        output.append("\n=== Distribution Centers ===")
-        if dcs['added']:
-            output.append(f"Added DCs: {', '.join(dcs['added'])}")
-        if dcs['removed']:
-            output.append(f"Removed DCs: {', '.join(dcs['removed'])}")
-        for dc, (old_demand, new_demand) in dcs['demand_changes'].items():
-            output.append(f"Changed demand for {dc}: {old_demand} → {new_demand}")
+    # Stores section
+    stores = differences['stores']
+    if stores['added'] or stores['removed'] or stores['demand_changes']:
+        output.append("\n=== Stores ===")
+        if stores['added']:
+            output.append(f"Added stores: {', '.join(stores['added'])}")
+        if stores['removed']:
+            output.append(f"Removed stores: {', '.join(stores['removed'])}")
+        for store, (old_demand, new_demand) in stores['demand_changes'].items():
+            output.append(f"Changed demand for {store}: {old_demand} → {new_demand}")
     
     # Cost changes section
     if differences['cost_changes']:
         output.append("\n=== Cost Changes ===")
-        for plant, dc_changes in differences['cost_changes'].items():
-            for dc, (old_cost, new_cost) in dc_changes.items():
-                output.append(f"Cost {plant} → {dc}: ${old_cost} → ${new_cost}")
+        for plant, store_changes in differences['cost_changes'].items():
+            for store, (old_cost, new_cost) in store_changes.items():
+                output.append(f"Cost {plant} → {store}: ${old_cost} → ${new_cost}")
     
     # Add solution comparison
     try:
@@ -291,15 +339,45 @@ def get_available_functions() -> List[Dict]:
         {
             "type": "function",
             "function": {
-                "name": "add_distribution_center_with_geocoding",
-                "description": "Add a new distribution center with automatic geocoding of its location",
+                "name": "remove_regional_distribution_center",
+                "description": "Remove a regional distribution center",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "name": {"type": "string", "description": "Name of the distribution center"},
-                        "demand": {"type": "integer", "description": "Demand of the distribution center"},
-                        "city": {"type": "string", "description": "City where the distribution center is located"},
-                        "state": {"type": "string", "description": "State/region where the distribution center is located"}
+                        "name": {"type": "string", "description": "Name of the RDC to remove"}
+                    },
+                    "required": ["name"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "add_rdc_with_geocoding",
+                "description": "Add a new regional distribution center with automatic geocoding of its location",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Name of the RDC"},
+                        "city": {"type": "string", "description": "City where the RDC is located"},
+                        "state": {"type": "string", "description": "State/region where the RDC is located"}
+                    },
+                    "required": ["name"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "add_store_with_geocoding",
+                "description": "Add a new store with automatic geocoding of its location",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Name of the store"},
+                        "demand": {"type": "integer", "description": "Demand of the store"},
+                        "city": {"type": "string", "description": "City where the store is located"},
+                        "state": {"type": "string", "description": "State/region where the store is located"}
                     },
                     "required": ["name", "demand"]
                 }
@@ -323,13 +401,13 @@ def get_available_functions() -> List[Dict]:
         # {
         #     "type": "function",
         #     "function": {
-        #         "name": "add_distribution_center",
-        #         "description": "Add a new distribution center with its demand",
+        #         "name": "add_store",
+        #         "description": "Add a new store with its demand",
         #         "parameters": {
         #             "type": "object",
         #             "properties": {
-        #                 "name": {"type": "string", "description": "Name of the distribution center"},
-        #                 "demand": {"type": "number", "description": "Demand of the distribution center"}
+        #                 "name": {"type": "string", "description": "Name of the store"},
+        #                 "demand": {"type": "number", "description": "Demand of the store"}
         #             },
         #             "required": ["name", "demand"]
         #         }
@@ -339,15 +417,15 @@ def get_available_functions() -> List[Dict]:
             "type": "function",
             "function": {
                 "name": "set_shipping_cost",
-                "description": "Set the shipping cost between a plant and a distribution center",
+                "description": "Set the shipping cost between a plant and a store",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "plant": {"type": "string", "description": "Name of the plant"},
-                        "dc": {"type": "string", "description": "Name of the distribution center"},
-                        "cost": {"type": "number", "description": "Cost per unit to ship from plant to DC"}
+                        "store": {"type": "string", "description": "Name of the store"},
+                        "cost": {"type": "number", "description": "Cost per unit to ship from plant to store"}
                     },
-                    "required": ["plant", "dc", "cost"]
+                    "required": ["plant", "store", "cost"]
                 }
             }
         },
@@ -363,7 +441,7 @@ def get_available_functions() -> List[Dict]:
             "type": "function",
             "function": {
                 "name": "get_model_info",
-                "description": "Get information about the current model including plants, distribution centers, and shipping costs",
+                "description": "Get information about the current model including plants, stores, and shipping costs",
                 "parameters": {"type": "object", "properties": {}}
             }
         },
@@ -386,12 +464,12 @@ def get_available_functions() -> List[Dict]:
             "type": "function",
             "function": {
                 "name": "update_demand",
-                "description": "Update demand of existing distribution center",
+                "description": "Update demand of existing store",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "name": {"type": "string", "description": "Name of the distribution center"},
-                        "demand": {"type": "number", "description": "New demand of the distribution center"}
+                        "name": {"type": "string", "description": "Name of the store"},
+                        "demand": {"type": "number", "description": "New demand of the store"}
                     },
                     "required": ["name", "demand"]
                 }
@@ -414,12 +492,12 @@ def get_available_functions() -> List[Dict]:
         {
             "type": "function",
             "function": {
-                "name": "remove_distribution_center",
-                "description": "Remove existing distribution center",
+                "name": "remove_store",
+                "description": "Remove existing store",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "name": {"type": "string", "description": "Name of the distribution center"}
+                        "name": {"type": "string", "description": "Name of the store"}
                     },
                     "required": ["name"]
                 }
@@ -482,23 +560,25 @@ def execute_function_call(function_name: str, function_args: Dict[str, Any]) -> 
     try:
         if function_name == "add_plant_with_geocoding":
             return add_plant_with_geocoding(**function_args)
-        elif function_name == "add_distribution_center_with_geocoding":
-            return add_distribution_center_with_geocoding(**function_args)
+        elif function_name == "add_store_with_geocoding":
+            return add_store_with_geocoding(**function_args)
+        elif function_name == "add_rdc_with_geocoding":
+            return add_rdc_with_geocoding(**function_args)
         # elif function_name == "add_plant":
         #     model.add_plant(function_args["name"], function_args["capacity"])
         #     return f"Added plant {function_args['name']} with capacity {function_args['capacity']}"
             
-        # elif function_name == "add_distribution_center":
-        #     model.add_distribution_center(function_args["name"], function_args["demand"])
-        #     return f"Added distribution center {function_args['name']} with demand {function_args['demand']}"
+        # elif function_name == "add_store":
+        #     model.add_store(function_args["name"], function_args["demand"])
+        #     return f"Added store {function_args['name']} with demand {function_args['demand']}"
             
         elif function_name == "set_shipping_cost":
             model.set_shipping_cost(
                 function_args["plant"],
-                function_args["dc"],
+                function_args["store"],
                 function_args["cost"]
             )
-            return f"Set shipping cost from {function_args['plant']} to {function_args['dc']} to {function_args['cost']}"
+            return f"Set shipping cost from {function_args['plant']} to {function_args['store']} to {function_args['cost']}"
             
         elif function_name == "solve_optimization":
             solution = model.solve()
@@ -508,13 +588,13 @@ def execute_function_call(function_name: str, function_args: Dict[str, Any]) -> 
             
         elif function_name == "get_model_info":
             plants = model.plants
-            distribution_centers = model.distribution_centers
+            stores = model.stores
             shipping_costs = model.costs
             capacity = model.capacity
             demand = model.demand
             return f"""Current Model State:
                 Plants: {plants}
-                Distribution Centers: {distribution_centers}
+                Stores: {stores}
                 Shipping Costs: {shipping_costs}
                 Capacity: {capacity}
                 Demand: {demand}"""
@@ -531,9 +611,13 @@ def execute_function_call(function_name: str, function_args: Dict[str, Any]) -> 
             model.remove_plant(function_args["name"])
             return f"Removed plant {function_args['name']}"
             
-        elif function_name == "remove_distribution_center":
-            model.remove_distribution_center(function_args["name"])
-            return f"Removed distribution center {function_args['name']}"
+        elif function_name == "remove_store":
+            model.remove_store(function_args["name"])
+            return f"Removed store {function_args['name']}"
+            
+        elif function_name == "remove_regional_distribution_center":
+            model.remove_regional_distribution_center(function_args["name"])
+            return f"Removed regional distribution center {function_args['name']}"
             
         elif function_name == "clear_model":
             model.clear_model()
@@ -570,6 +654,7 @@ def chat_with_ai(user_input: str, messages: List[Dict] = None) -> str:
             )
             response_message = response.choices[0].message
             
+            
             # Check if the AI wants to call a function
             if response_message.tool_calls:
                 for tool_call in response_message.tool_calls:
@@ -580,13 +665,13 @@ def chat_with_ai(user_input: str, messages: List[Dict] = None) -> str:
                     function_response = execute_function_call(function_name, function_args)
                     
                     # Add the function response to the messages
-                    
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tool_call.id,
                         "name": function_name,
                         "content": function_response
                     })
+                
                 try:
                     # Get a new response from the AI with the function's response
                     second_response = client.chat.completions.create(
@@ -598,8 +683,7 @@ def chat_with_ai(user_input: str, messages: List[Dict] = None) -> str:
                     return f"I'm sorry, but I encountered an error while processing the function response: {str(e)}. Please try again."
             else:
                 messages.append(response_message)
-                             
-            
+    
             return response_message.content
             
         except Exception as e:
@@ -620,7 +704,7 @@ initialize_model()
 def main():
     """Main function to run the chatbot."""
     print("Hello I am Kit your friendly network optimization chatbot!")
-    print("You can add plants, distribution centers, set shipping costs, and solve the optimization problem.")
+    print("You can add plants, stores, set shipping costs, and solve the optimization problem.")
     print("Type 'exit' to quit.\n")
     
     messages = [{
