@@ -14,11 +14,13 @@ class NetworkOptimization:
         
         # Initialize data structures
         self.plants = []
-        self.distribution_centers = []
+        self.stores = []
+        self.regional_distribution_centers = []
         self.capacity = {}        # plant -> capacity
-        self.demand = {}          # dc -> demand
-        self.costs = {}           # (plant, dc) -> cost/unit
+        self.demand = {}          # store -> demand
+        self.costs = {}           # (plant, store) -> cost/unit
         self.ship = {}            # Decision variables
+        self.locations = {}       # node -> {'lat': float, 'lon': float}
         #fixed variable for cost for plant ops
         #variable cost for plant ops
         
@@ -26,95 +28,215 @@ class NetworkOptimization:
     def clear_model(self):
         """Clear the model."""
         self.plants = []
-        self.distribution_centers = []
+        self.stores = []
+        self.regional_distribution_centers = []
         self.capacity = {}
         self.demand = {}
         self.costs = {}
         self.ship = {}
-    def add_plant(self, name, capacity):
-        """Add a plant with its capacity."""
+        self.locations = {}
+        
+    def add_plant(self, name, capacity, lat=None, lon=None, **kwargs):
+        """
+        Add a plant with its capacity and optional location.
+        
+        Args:
+            name (str): Name of the plant
+            capacity (float): Production capacity of the plant
+            lat (float, optional): Latitude of the plant location
+            lon (float, optional): Longitude of the plant location
+            **kwargs: For backward compatibility
+        """
         self.plants.append(name)
         self.capacity[name] = capacity
-        self.costs[name] = {}
+        self.costs[name] = {}  # Don't initialize any costs here
+        if lat is not None and lon is not None:
+            self.set_location(name, lat, lon)
+    
     def remove_plant(self, name):
         """Remove a plant."""
         self.plants.remove(name)
         del self.capacity[name]
         del self.costs[name]
-    def remove_distribution_center(self, name):
-        """Remove a distribution center."""
-        self.distribution_centers.remove(name)
+        if name in self.locations:
+            del self.locations[name]
+        
+    def remove_store(self, name):
+        """Remove a store."""
+        self.stores.remove(name)
         del self.demand[name]
         for plant in self.plants:
             del self.costs[plant][name]
-    def add_distribution_center(self, name, demand):
-        """Add a distribution center with its demand."""
-        self.distribution_centers.append(name)
-        self.demand[name] = demand
-        for plant in self.plants:
-            self.costs[plant][name] = 0  # Initialize cost to 0
-            
-    def set_shipping_cost(self, plant, dc, cost):
-        """Set the shipping cost from plant to distribution center."""
-        if plant not in self.plants:
-            raise ValueError(f"Unknown plant: {plant}")
-        if dc not in self.distribution_centers:
-            raise ValueError(f"Unknown distribution center: {dc}")
-        self.costs[plant][dc] = cost
+        for rdc in self.regional_distribution_centers:
+            if name in self.costs[rdc]:
+                del self.costs[rdc][name]
+        if name in self.locations:
+            del self.locations[name]
         
+    def remove_regional_distribution_center(self, name):
+        """Remove a regional distribution center (RDC)."""
+        self.regional_distribution_centers.remove(name)
+        # Remove all costs to and from this RDC
+        for plant in self.plants:
+            if name in self.costs[plant]:
+                del self.costs[plant][name]
+        if name in self.costs:
+            del self.costs[name]
+        for s in self.stores:
+            if name in self.costs and s in self.costs[name]:
+                del self.costs[name][s]
+        if name in self.locations:
+            del self.locations[name]
+        
+    def add_store(self, name, demand, lat=None, lon=None, **kwargs):
+        """
+        Add a store with its demand and optional location.
+        
+        Args:
+            name (str): Name of the store
+            demand (float): Demand of the store
+            lat (float, optional): Latitude of the store location
+            lon (float, optional): Longitude of the store location
+            **kwargs: For backward compatibility
+        """
+        self.stores.append(name)
+        self.demand[name] = demand
+        if lat is not None and lon is not None:
+            self.set_location(name, lat, lon)
+        # Don't initialize any costs here
+    
+    def add_regional_distribution_center(self, name, lat=None, lon=None, **kwargs):
+        """
+        Add a regional distribution center (RDC).
+        Args:
+            name (str): Name of the RDC
+            lat (float, optional): Latitude
+            lon (float, optional): Longitude
+            **kwargs: For backward compatibility
+        """
+        self.regional_distribution_centers.append(name)
+        if lat is not None and lon is not None:
+            self.set_location(name, lat, lon)
+        # Don't initialize any costs here   
+    
+    def set_location(self, node_name, lat, lon):
+        """
+        Set the location (latitude and longitude) for a node.
+        
+        Args:
+            node_name (str): Name of the node (plant or store)
+            lat (float): Latitude of the node
+            lon (float): Longitude of the node
+        """
+        self.locations[node_name] = {'lat': lat, 'lon': lon}
+    
+    def get_location(self, node_name):
+        """
+        Get the location (latitude and longitude) of a node.
+        
+        Args:
+            node_name (str): Name of the node (plant or store)
+            
+        Returns:
+            dict: Dictionary with 'lat' and 'lon' keys, or None if not found
+        """
+        return self.locations.get(node_name)
+        
+    def set_shipping_cost(self, src, dst, cost):
+        """Set the shipping cost from source to destination."""
+        if src not in self.plants and src not in self.regional_distribution_centers:
+            raise ValueError(f"Unknown source: {src}")
+        if dst not in self.stores and dst not in self.regional_distribution_centers:
+            raise ValueError(f"Unknown destination: {dst}")
+        if src not in self.costs:
+            self.costs[src] = {}
+        self.costs[src][dst] = cost
+            
     def update_capacity(self, plant, new_capacity):
         """Update the capacity of a plant."""
         if plant not in self.plants:
             raise ValueError(f"Unknown plant: {plant}")
         self.capacity[plant] = new_capacity
         
-    def update_demand(self, dc, new_demand):
-        """Update the demand of a distribution center."""
-        if dc not in self.distribution_centers:
-            raise ValueError(f"Unknown distribution center: {dc}")
-        self.demand[dc] = new_demand
+    def update_demand(self, s, new_demand):
+        """Update the demand of a store."""
+        if s not in self.stores:
+            raise ValueError(f"Unknown store: {s}")
+        self.demand[s] = new_demand
         
     def build_model(self):
         """Build the optimization model with the current data."""
-        # Clear any existing variables
         self.prob = LpProblem(self.name, LpMinimize)
         self.ship = {}
-        
-        # Create decision variables
-        for p in self.plants:
-            for d in self.distribution_centers:
-                self.ship[(p, d)] = LpVariable(f"ship_{p}_{d}", 0, None, LpInteger)
-        
+
+        # Only create variables for routes that have defined costs
+        for src in self.costs:
+            for dst, cost in self.costs[src].items():
+                if cost > 0:  # Only create variable if cost is positive
+                    self.ship[(src, dst)] = LpVariable(f"ship_{src}_{dst}", 0, None, LpInteger)
+
+        # Debug: Print all shipping costs and created variables
+        print("\nDebug - Active Shipping Routes:")
+        for (src, dst), var in self.ship.items():
+            cost = self.costs[src][dst]
+            print(f"Route: {src:20} -> {dst:20} | Cost: ${cost}/unit | Variable: {var.name}")
+
         # Objective function: minimize total cost
-        self.prob += lpSum(self.ship[(p, d)] * self.costs[p][d] 
-                          for p in self.plants 
-                          for d in self.distribution_centers), "Total_Cost"
-        
-        # Supply constraints
-        for p in self.plants:
-            self.prob += (lpSum(self.ship[(p, d)] for d in self.distribution_centers) 
-                         <= self.capacity[p], f"Supply_{p}")
-            
-        # Demand constraints
-        for d in self.distribution_centers:
-            self.prob += (lpSum(self.ship[(p, d)] for p in self.plants) 
-                         >= self.demand[d], f"Demand_{d}")
+        self.prob += lpSum(
+            self.ship[(src, dst)] * self.costs[src][dst]
+            for (src, dst) in self.ship
+        ), "Total_Cost"
+
+        # Plant supply constraints
+        for plant in self.plants:
+            valid_rdcs = [rdc for rdc in self.regional_distribution_centers 
+                        if (plant, rdc) in self.ship]
+            if valid_rdcs:
+                self.prob += (
+                    lpSum(self.ship[(plant, rdc)] for rdc in valid_rdcs)
+                    <= self.capacity[plant],
+                    f"Supply_{plant}"
+                )
+
+        # RDC conservation of flow constraints
+        for rdc in self.regional_distribution_centers:
+            incoming = [p for p in self.plants if (p, rdc) in self.ship]
+            outgoing = [s for s in self.stores if (rdc, s) in self.ship]
+            if incoming or outgoing:
+                self.prob += (
+                    lpSum(self.ship[(p, rdc)] for p in incoming)
+                    == lpSum(self.ship[(rdc, s)] for s in outgoing),
+                    f"FlowConservation_{rdc}"
+                )
+
+        # Store demand constraints
+        for store in self.stores:
+            incoming_rdcs = [rdc for rdc in self.regional_distribution_centers 
+                            if (rdc, store) in self.ship]
+            if incoming_rdcs:
+                self.prob += (
+                    lpSum(self.ship[(rdc, store)] for rdc in incoming_rdcs)
+                    >= self.demand[store],
+                    f"Demand_{store}"
+                )
     
     def solve(self):
         """Solve the optimization problem."""
         self.build_model()
         status = self.prob.solve(pulp.PULP_CBC_CMD(msg=False))
         if status == LpStatusInfeasible or status == LpStatusUndefined:
-            return { 'There was an error solving the problem. Please check your model.'}
+            return {'status': LpStatus[status], 'total_cost': float('inf'), 'solution': {}}
+    
+        solution = {
+            (src, dst): var.varValue
+            for (src, dst), var in self.ship.items()
+            if var.varValue and var.varValue > 0
+        }
+    
         return {
             'status': LpStatus[status],
             'total_cost': value(self.prob.objective),
-            'solution': {
-                (p, d): self.ship[(p, d)].varValue
-                for p in self.plants
-                for d in self.distribution_centers
-                if self.ship[(p, d)].varValue > 0
-            }
+            'solution': solution
         }
     
     # API is already able to understand JSON from solve() -- keeping this only for debugging
@@ -126,8 +248,8 @@ class NetworkOptimization:
             
         output = [f"Optimal Solution Found - Total Cost: ${result['total_cost']:,.2f}\n"]
         output.append("\nShipping Plan:")
-        for (p, d), qty in result['solution'].items():
-            output.append(f"Ship {int(qty)} units from {p} to {d}")
+        for (src, dst), qty in result['solution'].items():
+            output.append(f"Ship {int(qty)} units from {src} to {dst}")
         
         return "\n".join(output)
 
@@ -149,14 +271,16 @@ class NetworkOptimization:
         
         # Copy all attributes
         new_model.plants = self.plants.copy()
-        new_model.distribution_centers = self.distribution_centers.copy()
+        new_model.stores = self.stores.copy()
+        new_model.regional_distribution_centers = self.regional_distribution_centers.copy()
         new_model.capacity = self.capacity.copy()
         new_model.demand = self.demand.copy()
+        new_model.locations = self.locations.copy()
         
         # Deep copy the costs dictionary
         new_model.costs = {}
-        for plant in self.plants:
-            new_model.costs[plant] = self.costs[plant].copy()
+        for src in self.plants + self.regional_distribution_centers:
+            new_model.costs[src] = self.costs[src].copy()
         
         return new_model
 
@@ -179,10 +303,14 @@ class NetworkOptimization:
                 'removed': list(set(model1.plants) - set(model2.plants)),
                 'capacity_changes': {}
             },
-            'distribution_centers': {
-                'added': list(set(model2.distribution_centers) - set(model1.distribution_centers)),
-                'removed': list(set(model1.distribution_centers) - set(model2.distribution_centers)),
+            'stores': {
+                'added': list(set(model2.stores) - set(model1.stores)),
+                'removed': list(set(model1.stores) - set(model2.stores)),
                 'demand_changes': {}
+            },
+            'regional_distribution_centers': {
+                'added': list(set(model2.regional_distribution_centers) - set(model1.regional_distribution_centers)),
+                'removed': list(set(model1.regional_distribution_centers) - set(model2.regional_distribution_centers)),
             },
             'cost_changes': {}
         }
@@ -196,55 +324,73 @@ class NetworkOptimization:
                     model2.capacity.get(plant)
                 )
         
-        # Check for demand changes in common distribution centers
-        common_dcs = set(model1.distribution_centers) & set(model2.distribution_centers)
-        for dc in common_dcs:
-            if model1.demand.get(dc) != model2.demand.get(dc):
-                differences['distribution_centers']['demand_changes'][dc] = (
-                    model1.demand.get(dc),
-                    model2.demand.get(dc)
+        # Check for demand changes in common stores
+        common_stores = set(model1.stores) & set(model2.stores)
+        for s in common_stores:
+            if model1.demand.get(s) != model2.demand.get(s):
+                differences['stores']['demand_changes'][s] = (
+                    model1.demand.get(s),
+                    model2.demand.get(s)
                 )
         
         # Check for cost changes
-        for plant in common_plants:
-            for dc in common_dcs:
-                cost1 = model1.costs.get(plant, {}).get(dc)
-                cost2 = model2.costs.get(plant, {}).get(dc)
+        for src in common_plants | set(model1.regional_distribution_centers) & set(model2.regional_distribution_centers):
+            for dst in common_stores | set(model1.regional_distribution_centers) & set(model2.regional_distribution_centers):
+                cost1 = model1.costs.get(src, {}).get(dst)
+                cost2 = model2.costs.get(src, {}).get(dst)
                 if cost1 != cost2:
-                    if plant not in differences['cost_changes']:
-                        differences['cost_changes'][plant] = {}
-                    differences['cost_changes'][plant][dc] = (cost1, cost2)
+                    if src not in differences['cost_changes']:
+                        differences['cost_changes'][src] = {}
+                    differences['cost_changes'][src][dst] = (cost1, cost2)
         
         return differences
 
 # Example usage
 if __name__ == "__main__":
     # Create model instance
-    model = NetworkOptimization("Railey_Transportation_Problem")
+    model = NetworkOptimization("US_Transportation_Network")
     
-    # Add plants with capacities
-    model.add_plant("Ahmedabad", 4800)
-    model.add_plant("Patna", 3500)
-    model.add_plant("Hyderabad", 2200)
+    # Add plants with capacities (in units) and locations
+    model.add_plant("Chicago_IL", 10000, 41.8781, -87.6298)    # Major manufacturing hub
+    model.add_plant("Houston_TX", 8500, 29.7604, -95.3698)     # Major industrial center
+    model.add_plant("LosAngeles_CA", 9500, 34.0522, -118.2437)  # West Coast manufacturing
     
-    # Add distribution centers with demands
-    model.add_distribution_center("Bhopal", 4800)
-    model.add_distribution_center("Indore", 5700)
+    # Add regional distribution centers
+    model.add_regional_distribution_center("RDC1_Chicago", 41.8781, -87.6298)  # Midwest hub
+    model.add_regional_distribution_center("RDC2_Atlanta", 33.7490, -84.3880)  # Southeast hub
+    model.add_regional_distribution_center("RDC3_Denver", 39.7392, -104.9903)  # Central hub
     
-    # Set shipping costs
-    model.set_shipping_cost("Ahmedabad", "Bhopal", 16500)
-    model.set_shipping_cost("Ahmedabad", "Indore", 10600)
-    model.set_shipping_cost("Patna", "Bhopal", 12200)
-    model.set_shipping_cost("Patna", "Indore", 12600)
-    model.set_shipping_cost("Hyderabad", "Bhopal", 10300)
-    model.set_shipping_cost("Hyderabad", "Indore", 9240)
+    # Add stores with demands (in units) and locations
+    model.add_store("NewYork_NY", 8000, 40.7128, -74.0060)     # High population density
+    model.add_store("Miami_FL", 6000, 25.7617, -80.1918)       # Southeast retail hub
+    model.add_store("Seattle_WA", 5000, 47.6062, -122.3321)    # Pacific Northwest
+    model.add_store("Dallas_TX", 7000, 32.7767, -96.7970)      # Major Texas market
+    
+    # Set shipping costs (in dollars per unit)
+    # Plants to RDCs
+    model.set_shipping_cost("Chicago_IL", "RDC1_Chicago", 500)
+    model.set_shipping_cost("Chicago_IL", "RDC2_Atlanta", 1200)
+    model.set_shipping_cost("Houston_TX", "RDC2_Atlanta", 800)
+    model.set_shipping_cost("Houston_TX", "RDC3_Denver", 1000)
+    model.set_shipping_cost("LosAngeles_CA", "RDC3_Denver", 700)
+    model.set_shipping_cost("LosAngeles_CA", "RDC1_Chicago", 1500)
+    
+    # RDCs to Stores
+    model.set_shipping_cost("RDC1_Chicago", "NewYork_NY", 800)
+    model.set_shipping_cost("RDC2_Atlanta", "Miami_FL", 600)
+    model.set_shipping_cost("RDC2_Atlanta", "Dallas_TX", 500)
+    model.set_shipping_cost("RDC3_Denver", "Seattle_WA", 700)
+    model.set_shipping_cost("RDC3_Denver", "Dallas_TX", 600)
     
     # Solve and print results
+    solution = model.solve()
+    print("\nOptimal Solution:")
     print(model.get_solution_summary())
 
-    # Create a copy of the model
-    model_copy = model.copy()
+    # Check if solution has 'solution' key and it's not None
+    if 'solution' in solution and solution['solution']:
+        for (src, dst), amount in solution['solution'].items():
+            if amount > 0:  # Only show routes with shipments
+                print(f"Ship {int(amount)} units from {src} to {dst}")
 
-    # Compare the two models
-    differences = NetworkOptimization.compare_models(model, model_copy)
-    print(differences)
+    print("\nTotal Cost: $", solution.get('total_cost', 'N/A'))
