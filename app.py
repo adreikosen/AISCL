@@ -592,12 +592,14 @@ def execute_function_call(function_name: str, function_args: Dict[str, Any]) -> 
             shipping_costs = model.costs
             capacity = model.capacity
             demand = model.demand
+            regional_distribution_centers = model.regional_distribution_centers
             return f"""Current Model State:
                 Plants: {plants}
                 Stores: {stores}
                 Shipping Costs: {shipping_costs}
                 Capacity: {capacity}
-                Demand: {demand}"""
+                Demand: {demand}
+                Regional Distribution Centers: {regional_distribution_centers}"""
             
         elif function_name == "update_capacity":
             model.update_capacity(function_args["name"], function_args["capacity"])
@@ -707,8 +709,8 @@ def main():
     
     messages = [{
         "role": "system",
-        "content": """You are a helpful assistant for network optimization. You can help users model and solve network optimization problems in supply chain. 
-        You can also help users create and compare different scenarios by taking snapshots of the model at different points in time. When comparing models, make sure to highlight the key differences and their business implications for stakeholders. A base model has been preloaded into the system."""
+        "content": """You are a helpful assistant for network optimization. You can help users model and solve network optimization problems in supply chain. In this model there are plants that have capacity which ship to regional distribution centers which must adhere to a conservation of flow requirement and then the regional distribution centers ship to stores. The goal is to minimize the total shipping cost while satisfying the demand at each store. 
+        You can help users create and compare different scenarios by taking snapshots of the model at different points in time. You can interact with and solve the model. When comparing models, make sure to highlight the key differences and their business implications for stakeholders. A base model has been preloaded into the system."""
     }]
     
     while True:

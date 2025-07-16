@@ -46,7 +46,13 @@ class NetworkOptimization:
             lat (float, optional): Latitude of the plant location
             lon (float, optional): Longitude of the plant location
             **kwargs: For backward compatibility
+            
+        Raises:
+            ValueError: If a plant with the same name already exists
         """
+        if name in self.plants:
+            raise ValueError(f"A plant with name '{name}' already exists. Please use a unique name or remove the existing plant first.")
+            
         self.plants.append(name)
         self.capacity[name] = capacity
         self.costs[name] = {}  # Don't initialize any costs here
@@ -98,26 +104,38 @@ class NetworkOptimization:
             lat (float, optional): Latitude of the store location
             lon (float, optional): Longitude of the store location
             **kwargs: For backward compatibility
+            
+        Raises:
+            ValueError: If a store with the same name already exists
         """
+        if name in self.stores:
+            raise ValueError(f"A store with name '{name}' already exists. Please use a unique name or remove the existing store first.")
+            
         self.stores.append(name)
         self.demand[name] = demand
         if lat is not None and lon is not None:
             self.set_location(name, lat, lon)
         # Don't initialize any costs here
-    
     def add_regional_distribution_center(self, name, lat=None, lon=None, **kwargs):
         """
         Add a regional distribution center (RDC).
+        
         Args:
             name (str): Name of the RDC
-            lat (float, optional): Latitude
-            lon (float, optional): Longitude
+            lat (float, optional): Latitude of the RDC location
+            lon (float, optional): Longitude of the RDC location
             **kwargs: For backward compatibility
+            
+        Raises:
+            ValueError: If an RDC with the same name already exists
         """
+        if name in self.regional_distribution_centers:
+            raise ValueError(f"An RDC with name '{name}' already exists. Please use a unique name or remove the existing RDC first.")
+            
         self.regional_distribution_centers.append(name)
         if lat is not None and lon is not None:
             self.set_location(name, lat, lon)
-        # Don't initialize any costs here   
+        # Don't initialize any costs here
     
     def set_location(self, node_name, lat, lon):
         """
