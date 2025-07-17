@@ -85,6 +85,83 @@ if 'messages' not in st.session_state:
     st.session_state.locations = {}
     st.session_state.last_clicked = None
 
+def create_info_tables(model):
+    """Create information tables for plants, RDCs, stores, and shipping costs."""
+    try:
+        # Initialize containers for each table
+        plants_data = []
+        rdcs_data = []
+        stores_data = []
+        shipping_costs = []
+        
+        # Get solution for optimal shipping routes
+        solution = model.solve()
+        solution_routes = set()
+        if solution and 'solution' in solution and solution['solution']:
+            solution_routes = set(solution['solution'].keys())
+        
+        # Prepare plants data
+        for plant in getattr(model, 'plants', []):
+            capacity = getattr(model, 'capacity', {}).get(plant, 'N/A')
+            location = getattr(model, 'locations', {}).get(plant, {})
+            lat = location.get('lat', 'N/A')
+            lon = location.get('lon', 'N/A')
+            coord_str = f"({lat}, {lon})" if lat != 'N/A' and lon != 'N/A' else 'N/A'
+            plants_data.append({
+                'Name': plant,
+                'Capacity': capacity,
+                'Coordinates': coord_str
+            })
+        
+        # Prepare RDCs data
+        for rdc in getattr(model, 'regional_distribution_centers', []):
+            location = getattr(model, 'locations', {}).get(rdc, {})
+            lat = location.get('lat', 'N/A')
+            lon = location.get('lon', 'N/A')
+            coord_str = f"({lat}, {lon})" if lat != 'N/A' and lon != 'N/A' else 'N/A'
+            rdcs_data.append({
+                'Name': rdc,
+                'Coordinates': coord_str
+            })
+        
+        # Prepare stores data
+        for store in getattr(model, 'stores', []):
+            demand = getattr(model, 'demand', {}).get(store, 'N/A')
+            location = getattr(model, 'locations', {}).get(store, {})
+            lat = location.get('lat', 'N/A')
+            lon = location.get('lon', 'N/A')
+            coord_str = f"({lat}, {lon})" if lat != 'N/A' and lon != 'N/A' else 'N/A'
+            stores_data.append({
+                'Name': store,
+                'Demand': demand,
+                'Coordinates': coord_str
+            })
+        
+        # Prepare shipping costs data
+        for from_node in getattr(model, 'costs', {}):
+            for to_node in getattr(model, 'costs', {}).get(from_node, {}):
+                try:
+                    cost = model.get_shipping_cost(from_node, to_node)
+                    is_optimal = (from_node, to_node) in solution_routes
+                    shipping_costs.append({
+                        'Source': from_node,
+                        'Destination': to_node,
+                        'Cost per Unit': f"${cost:.2f}",
+                        'In Optimal Solution': 'Yes' if is_optimal else 'No'
+                    })
+                except Exception as e:
+                    continue
+        
+        return {
+            'plants': pd.DataFrame(plants_data),
+            'rdcs': pd.DataFrame(rdcs_data),
+            'stores': pd.DataFrame(stores_data),
+            'shipping_costs': pd.DataFrame(shipping_costs)
+        }
+    except Exception as e:
+        st.error(f"Error creating info tables: {str(e)}")
+        return None
+
 def get_model_data():
     """Extract data from the model for visualization."""
     try:
@@ -130,7 +207,7 @@ def get_model_data():
                     'type': 'dc',
                     'label': f"{dc}\n(Demand: {demand})",
                     'size': 15,
-                    'color': 'green'
+                    'color': 'gold'
                 })
             except Exception as e:
                 st.warning(f"Error processing stores {dc}: {str(e)}")
@@ -180,7 +257,7 @@ def get_model_data():
                         'to': dc,
                         'label': f"{int(qty)} units\n(${cost}/unit)",
                         'value': qty,
-                        'color': 'red'
+                        'color': '#90ee91'
                     })
                 except Exception as e:
                     st.warning(f"Error processing edge from {p} to {dc}: {str(e)}")
@@ -241,7 +318,7 @@ def create_map():
             icon = folium.Icon(icon='glyphicon-transfer', color='blue')
         else:
             popup += f"Type: Store<br>Demand: {st.session_state.model.demand[node['id']]}"
-            icon = folium.Icon(icon='glyphicon-tag', color='green')
+            icon = folium.Icon(icon='glyphicon-tag', color='orange')
         
         folium.Marker(
             location=loc,
@@ -275,7 +352,7 @@ def create_map():
         if from_loc and to_loc:
             folium.PolyLine(
                 locations=[(from_loc['lat'], from_loc['lon']), (to_loc['lat'], to_loc['lon'])],
-                color='red',
+                color='#90ee91',
                 weight=3,
                 opacity=1,
                 tooltip=f"{edge['from']} to {edge['to']}: {edge['label']}"
@@ -344,7 +421,7 @@ def create_plotly_graph():
             color = 'blue'
             node_types.append('RDC')
         else: 
-            color = 'green'
+            color = 'orange'
             node_types.append('Store')
         node_text.append(node_types[-1] + ': ' + node['label'])
         node_colors.append(color)
@@ -379,7 +456,7 @@ def create_plotly_graph():
     # Create edge traces
     edge_trace = go.Scatter(
         x=edge_x, y=edge_y,
-        line=dict(width=1, color='#FF0000'),
+        line=dict(width=1, color='#5ce600'),
         hoverinfo='text',
         mode='lines',
         text=edge_text,
@@ -424,10 +501,12 @@ def create_plotly_graph():
     
     return fig
 
+
+
 def main():
     st.title("Network Optimization Dashboard")
     
-    # Initialize the dashboard model
+    # Initialize the model if not already done
     if not initialize_dashboard_model():
         st.error("Failed to initialize the dashboard model. Please check the logs for more information.")
         return
@@ -435,6 +514,7 @@ def main():
     # Initialize locations in session state if not exists
     if 'locations' not in st.session_state:
         st.session_state.locations = {}
+    
     
     # Initialize chat history if not exists
     if 'chat_messages' not in st.session_state:
@@ -481,7 +561,7 @@ def main():
         # Create and display map if we have model data
         if model_data and 'nodes' in model_data and model_data['nodes']:
             m = create_map()
-            st_folium(m, width=900, height=500)
+            st_folium(m, width='100%', height=500)
         else:
             st.warning("No nodes available to display on the map.")
     
@@ -495,6 +575,27 @@ def main():
                 st.warning("Could not generate network graph.")
         else:
             st.warning("No nodes available to display in the network graph.")
+
+    tables = create_info_tables(st.session_state.model)
+        
+    if tables:
+        st.header("Plants")
+        st.dataframe(tables['plants'], use_container_width=True, hide_index=True)
+        
+        st.header("Regional Distribution Centers")
+        st.dataframe(tables['rdcs'], use_container_width=True, hide_index=True)
+        
+        st.header("Stores")
+        st.dataframe(tables['stores'], use_container_width=True, hide_index=True)
+        
+        st.header("Shipping Costs")
+        # Apply styling to highlight optimal routes
+        def highlight_optimal(row):
+            return ['background-color: #90EE90' if row['In Optimal Solution'] == 'Yes' else '' for _ in row]
+            
+        styled_df = tables['shipping_costs'].style.apply(highlight_optimal, axis=1)
+        st.dataframe(styled_df, use_container_width=True, hide_index=True)
+        st.caption("Rows highlighted in green indicate routes that are part of the optimal solution.")
     
     # Sidebar for model information and controls
     with st.sidebar:
