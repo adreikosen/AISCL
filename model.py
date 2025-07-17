@@ -375,37 +375,45 @@ if __name__ == "__main__":
     model = NetworkOptimization("US_Transportation_Network")
     
     # Add plants with capacities (in units) and locations
-    model.add_plant("Chicago_IL", 10000, 41.8781, -87.6298)    # Major manufacturing hub
-    model.add_plant("Houston_TX", 8500, 29.7604, -95.3698)     # Major industrial center
-    model.add_plant("LosAngeles_CA", 9500, 34.0522, -118.2437)  # West Coast manufacturing
+    model.add_plant("Chicago_IL", 13000, 41.8781, -87.6298)    # Major manufacturing hub
+    model.add_plant("Houston_TX", 14500, 29.7604, -95.3698)     # Major industrial center
+    model.add_plant("LosAngeles_CA", 12500, 34.0522, -118.2437)  # West Coast manufacturing
     
     # Add regional distribution centers
     model.add_regional_distribution_center("RDC1_Chicago", 41.8781, -87.6298)  # Midwest hub
     model.add_regional_distribution_center("RDC2_Atlanta", 33.7490, -84.3880)  # Southeast hub
-    model.add_regional_distribution_center("RDC3_Denver", 39.7392, -104.9903)  # Central hub
+    #model.add_regional_distribution_center("RDC3_Denver", 39.7392, -104.9903)  # Central hub
     
     # Add stores with demands (in units) and locations
-    model.add_store("NewYork_NY", 8000, 40.7128, -74.0060)     # High population density
-    model.add_store("Miami_FL", 6000, 25.7617, -80.1918)       # Southeast retail hub
+    model.add_store("NewYork_NY", 7000, 40.7128, -74.0060)     # High population density
+    model.add_store("Miami_FL", 5500, 25.7617, -80.1918)       # Southeast retail hub
     model.add_store("Seattle_WA", 5000, 47.6062, -122.3321)    # Pacific Northwest
-    model.add_store("Dallas_TX", 7000, 32.7767, -96.7970)      # Major Texas market
+    model.add_store("Dallas_TX", 6500, 32.7767, -96.7970)      # Major Texas market
+    model.add_store("Boston_MA", 5000, 42.3601, -71.0589)      # Major Northeast market
+    model.add_store("LasVegas_NV", 8000, 36.1699, -115.1398)      # Major West Coast market
     
     # Set shipping costs (in dollars per unit)
     # Plants to RDCs
-    model.set_shipping_cost("Chicago_IL", "RDC1_Chicago", 500)
-    model.set_shipping_cost("Chicago_IL", "RDC2_Atlanta", 1200)
+    model.set_shipping_cost("Chicago_IL", "RDC1_Chicago", 100)
+    model.set_shipping_cost("Chicago_IL", "RDC2_Atlanta", 100)
     model.set_shipping_cost("Houston_TX", "RDC2_Atlanta", 800)
-    model.set_shipping_cost("Houston_TX", "RDC3_Denver", 1000)
-    model.set_shipping_cost("LosAngeles_CA", "RDC3_Denver", 700)
-    model.set_shipping_cost("LosAngeles_CA", "RDC1_Chicago", 1500)
+    model.set_shipping_cost("Houston_TX", "RDC1_Chicago", 1000)
+    model.set_shipping_cost("LosAngeles_CA", "RDC2_Atlanta", 3000)
+    model.set_shipping_cost("LosAngeles_CA", "RDC1_Chicago", 3500)
     
     # RDCs to Stores
     model.set_shipping_cost("RDC1_Chicago", "NewYork_NY", 800)
     model.set_shipping_cost("RDC2_Atlanta", "Miami_FL", 600)
     model.set_shipping_cost("RDC2_Atlanta", "Dallas_TX", 500)
-    model.set_shipping_cost("RDC3_Denver", "Seattle_WA", 700)
-    model.set_shipping_cost("RDC3_Denver", "Dallas_TX", 600)
-    print(model.get_shipping_cost("RDC1_Chicago", "NewYork_NY"))
+    model.set_shipping_cost("RDC1_Chicago", "Seattle_WA", 1000)
+    model.set_shipping_cost("RDC2_Atlanta", "Dallas_TX", 800)
+    model.set_shipping_cost("RDC1_Chicago", "LasVegas_NV", 1200)
+    model.set_shipping_cost("RDC2_Atlanta", "LasVegas_NV", 1200)
+    model.set_shipping_cost("RDC1_Chicago", "Boston_MA", 800)
+    model.set_shipping_cost("RDC2_Atlanta", "Boston_MA", 1000)
+    model.set_shipping_cost("RDC2_Atlanta","Seattle_WA", 1000)
+   
+    
     
     # Solve and print results
     solution = model.solve()

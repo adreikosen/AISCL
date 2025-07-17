@@ -169,38 +169,47 @@ def add_rdc_with_geocoding(name: str, city: str = None, state: str = None) -> st
 def initialize_model():
     """Initialize the model with default values using US cities."""
     global model
-    model = NetworkOptimization("US_Base_Model")
+    model = NetworkOptimization("US_Transportation_Network")
+   # Create model instance
+    model = NetworkOptimization("US_Transportation_Network")
     
-    # Add plants (manufacturing facilities) with production capacities (in units) and locations
-    model.add_plant("Chicago_IL", 10000, lat=41.8781, lon=-87.6298)    # Major manufacturing hub in the Midwest
-    model.add_plant("Houston_TX", 8500, lat=29.7604, lon=-95.3698)     # Major industrial center in the South
-    model.add_plant("LosAngeles_CA", 9500, lat=34.0522, lon=-118.2437)  # Major West Coast manufacturing center
+    # Add plants with capacities (in units) and locations
+    model.add_plant("Chicago_IL", 13000, 41.8781, -87.6298)    # Major manufacturing hub
+    model.add_plant("Houston_TX", 14500, 29.7604, -95.3698)     # Major industrial center
+    model.add_plant("LosAngeles_CA", 12500, 34.0522, -118.2437)  # West Coast manufacturing
     
-    # Add Regional Distribution Centers with locations
-    model.add_regional_distribution_center("RDC1_Chicago", lat=41.8781, lon=-87.6298)  # Same as Chicago plant
-    model.add_regional_distribution_center("RDC2_Atlanta", lat=33.7490, lon=-84.3880)  # Major logistics hub
-    model.add_regional_distribution_center("RDC3_Denver", lat=39.7392, lon=-104.9903)  # Central distribution point
+    # Add regional distribution centers
+    model.add_regional_distribution_center("RDC1_Chicago", 41.8781, -87.6298)  # Midwest hub
+    model.add_regional_distribution_center("RDC2_Atlanta", 33.7490, -84.3880)  # Southeast hub
+    #model.add_regional_distribution_center("RDC3_Denver", 39.7392, -104.9903)  # Central hub
     
     # Add stores with demands (in units) and locations
-    model.add_store("NewYork_NY", 8000, lat=40.7128, lon=-74.0060)    # High population density
-    model.add_store("Miami_FL", 6000, lat=25.7617, lon=-80.1918)      # Major Southeastern hub
-    model.add_store("Seattle_WA", 5000, lat=47.6062, lon=-122.3321)   # Pacific Northwest
-    model.add_store("Dallas_TX", 7000, lat=32.7767, lon=-96.7970)     # Major Texas hub
+    model.add_store("NewYork_NY", 7000, 40.7128, -74.0060)     # High population density
+    model.add_store("Miami_FL", 5500, 25.7617, -80.1918)       # Southeast retail hub
+    model.add_store("Seattle_WA", 5000, 47.6062, -122.3321)    # Pacific Northwest
+    model.add_store("Dallas_TX", 6500, 32.7767, -96.7970)      # Major Texas market
+    model.add_store("Boston_MA", 5000, 42.3601, -71.0589)      # Major Northeast market
+    model.add_store("LasVegas_NV", 8000, 36.1699, -115.1398)      # Major West Coast market
     
-    # Set shipping costs from plants to RDCs (in dollars per unit)
-    model.set_shipping_cost("Chicago_IL", "RDC1_Chicago", 500)    # Local transfer
-    model.set_shipping_cost("Chicago_IL", "RDC2_Atlanta", 1200)   # Chicago to Atlanta
-    model.set_shipping_cost("Houston_TX", "RDC2_Atlanta", 800)    # Houston to Atlanta
-    model.set_shipping_cost("Houston_TX", "RDC3_Denver", 1000)    # Houston to Denver
-    model.set_shipping_cost("LosAngeles_CA", "RDC3_Denver", 700)  # LA to Denver
-    model.set_shipping_cost("LosAngeles_CA", "RDC1_Chicago", 1500) # Cross-country
+    # Set shipping costs (in dollars per unit)
+    # Plants to RDCs
+    model.set_shipping_cost("Chicago_IL", "RDC1_Chicago", 100)  # Local transfer within Chicago
+    model.set_shipping_cost("Chicago_IL", "RDC2_Atlanta", 1404.20)  # Chicago → ATL: $1,404.20
+    model.set_shipping_cost("Houston_TX", "RDC2_Atlanta", 1666.00)  # Houston → ATL: $1,666.00
+    model.set_shipping_cost("Houston_TX", "RDC1_Chicago", 2237.20)  # Houston → Chicago: $2,237.20
+    model.set_shipping_cost("LosAngeles_CA", "RDC2_Atlanta", 4641.00)  # LA → ATL: $4,641.00
+    model.set_shipping_cost("LosAngeles_CA", "RDC1_Chicago", 4165.00)  # LA → Chicago: $4,165.00
     
-    # Set shipping costs from RDCs to stores (in dollars per unit)
-    model.set_shipping_cost("RDC1_Chicago", "NewYork_NY", 800)    # Chicago to NYC
-    model.set_shipping_cost("RDC2_Atlanta", "Miami_FL", 600)      # Atlanta to Miami
-    model.set_shipping_cost("RDC2_Atlanta", "Dallas_TX", 500)     # Atlanta to Dallas
-    model.set_shipping_cost("RDC3_Denver", "Seattle_WA", 700)     # Denver to Seattle
-    model.set_shipping_cost("RDC3_Denver", "Dallas_TX", 600)      # Denver to Dallas
+    # RDCs to Stores
+    model.set_shipping_cost("RDC1_Chicago", "NewYork_NY", 1880.20)  # Chicago → NYC: $1,880.20
+    model.set_shipping_cost("RDC2_Atlanta", "Miami_FL", 1428.00)  # Atlanta → Miami: $1,428.00
+    model.set_shipping_cost("RDC2_Atlanta", "Dallas_TX", 1713.60)  # Atlanta → Dallas: $1,713.60
+    model.set_shipping_cost("RDC1_Chicago", "Seattle_WA", 4117.40)  # Chicago → Seattle: $4,117.40
+    model.set_shipping_cost("RDC1_Chicago", "LasVegas_NV", 3617.60)  # Chicago → Las Vegas: $3,617.60
+    model.set_shipping_cost("RDC2_Atlanta", "LasVegas_NV", 4165.00)  # Atlanta → Las Vegas: $4,165.00
+    model.set_shipping_cost("RDC1_Chicago", "Boston_MA", 2023.00)  # Chicago → Boston: $2,023.00
+    model.set_shipping_cost("RDC2_Atlanta", "Boston_MA", 2261.00)  # Atlanta → Boston: $2,261.00
+    model.set_shipping_cost("RDC2_Atlanta", "Seattle_WA", 5188.40)  # Atlanta → Seattle: $5,188.40
 
 def create_snapshot(snapshot_name: str = None) -> str:
     """
@@ -445,15 +454,15 @@ def get_available_functions() -> List[Dict]:
             "type": "function",
             "function": {
                 "name": "set_shipping_cost",
-                "description": "Set the shipping cost between a plant and a store",
+                "description": "Set the shipping cost between a source and destination",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "plant": {"type": "string", "description": "Name of the plant"},
-                        "store": {"type": "string", "description": "Name of the store"},
+                        "source": {"type": "string", "description": "Name of the source"},
+                        "destination": {"type": "string", "description": "Name of the destination"},
                         "cost": {"type": "number", "description": "Cost per unit to ship from plant to store"}
                     },
-                    "required": ["plant", "store", "cost"]
+                    "required": ["source", "destination", "cost"]
                 }
             }
         },
@@ -579,23 +588,15 @@ def execute_function_call(function_name: str, function_args: Dict[str, Any]) -> 
             return add_store_with_geocoding(**function_args)
         elif function_name == "add_rdc_with_geocoding":
             return add_rdc_with_geocoding(**function_args)
-        # elif function_name == "add_plant":
-        #     model.add_plant(function_args["name"], function_args["capacity"])
-        #     return f"Added plant {function_args['name']} with capacity {function_args['capacity']}"
-            
-        # elif function_name == "add_store":
-        #     model.add_store(function_args["name"], function_args["demand"])
-        #     return f"Added store {function_args['name']} with demand {function_args['demand']}"
-            
         elif function_name == "get_shipping_cost":
             return model.get_shipping_cost(function_args["src"], function_args["dst"])
         elif function_name == "set_shipping_cost":
             model.set_shipping_cost(
-                function_args["src"],
-                function_args["dst"],
+                function_args.get("source") or function_args.get("src"),
+                function_args.get("destination") or function_args.get("dst"),
                 function_args["cost"]
             )
-            return f"Set shipping cost from {function_args['src']} to {function_args['dst']} to {function_args['cost']}"
+            return f"Set shipping cost from {function_args.get('source') or function_args.get('src')} to {function_args.get('destination') or function_args.get('dst')} to {function_args['cost']}"
             
         elif function_name == "solve_optimization":
             solution = model.solve()
@@ -682,12 +683,11 @@ def chat_with_ai(user_input: str, messages: List[Dict] = None) -> str:
                     
                     # Execute the function
                     function_response = execute_function_call(function_name, function_args)
-                    
                     # Add the function response to the messages
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tool_call.id,
-                        "content": str(function_response)
+                        "content": function_response 
                     })
                 
                 try:
