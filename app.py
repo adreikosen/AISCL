@@ -655,9 +655,7 @@ def chat_with_ai(user_input: str, messages: List[Dict] = None) -> str:
                 tool_choice="auto"
             )
             response_message = response.choices[0].message
-            messages.append(response_message)
-            
-            # Check if the AI wants to call a function
+                        # Check if the AI wants to call a function
             if response_message.tool_calls:
                 for tool_call in response_message.tool_calls:
                     function_name = tool_call.function.name
@@ -667,13 +665,13 @@ def chat_with_ai(user_input: str, messages: List[Dict] = None) -> str:
                     function_response = execute_function_call(function_name, function_args)
                     
                     # Add the function response to the messages
+                    
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tool_call.id,
                         "name": function_name,
                         "content": function_response
                     })
-                
                 try:
                     # Get a new response from the AI with the function's response
                     second_response = client.chat.completions.create(
@@ -683,6 +681,9 @@ def chat_with_ai(user_input: str, messages: List[Dict] = None) -> str:
                     return second_response.choices[0].message.content
                 except Exception as e:
                     return f"I'm sorry, but I encountered an error while processing the function response: {str(e)}. Please try again."
+            else:
+                messages.append(response_message)
+                             
             
             return response_message.content
             
