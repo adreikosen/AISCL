@@ -420,36 +420,6 @@ def get_available_functions() -> List[Dict]:
                 }
             }
         },
-        # {
-        #     "type": "function",
-        #     "function": {
-        #         "name": "add_plant",
-        #         "description": "Add a new plant with its capacity",
-        #         "parameters": {
-        #             "type": "object",
-        #             "properties": {
-        #                 "name": {"type": "string", "description": "Name of the plant"},
-        #                 "capacity": {"type": "number", "description": "Production capacity of the plant"}
-        #             },
-        #             "required": ["name", "capacity"]
-        #         }
-        #     }
-        # },
-        # {
-        #     "type": "function",
-        #     "function": {
-        #         "name": "add_store",
-        #         "description": "Add a new store with its demand",
-        #         "parameters": {
-        #             "type": "object",
-        #             "properties": {
-        #                 "name": {"type": "string", "description": "Name of the store"},
-        #                 "demand": {"type": "number", "description": "Demand of the store"}
-        #             },
-        #             "required": ["name", "demand"]
-        #         }
-        #     }
-        # },
         {
             "type": "function",
             "function": {
@@ -533,23 +503,6 @@ def get_available_functions() -> List[Dict]:
                 "name": "clear_model",
                 "description": "Clear the model",
                 "parameters": {"type": "object", "properties": {}}
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "compare_with_snapshot",
-                "description": "Compare the current model with a previously saved snapshot",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "snapshot_name": {
-                            "type": "string",
-                            "description": "Name of the snapshot to compare with"
-                        }
-                    },
-                    "required": ["snapshot_name"]
-                }
             }
         },
         {
