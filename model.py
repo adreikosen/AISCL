@@ -156,9 +156,21 @@ class NetworkOptimization:
             node_name (str): Name of the node (plant or store)
             
         Returns:
-            dict: Dictionary with 'lat' and 'lon' keys, or None if not found
+        dict: Dictionary with 'lat' and 'lon' keys, or None if not found
         """
         return self.locations.get(node_name)
+    def get_shipping_cost(self, src, dst):
+        """
+        Get the shipping cost from source to destination.
+        
+        Args:
+            src (str): Source node (plant or RDC)
+            dst (str): Destination node (store or RDC)
+            
+        Returns:
+            float: Shipping cost from source to destination, or None if not found
+        """
+        return self.costs.get(src, {}).get(dst)
         
     def set_shipping_cost(self, src, dst, cost):
         """Set the shipping cost from source to destination."""
@@ -192,12 +204,6 @@ class NetworkOptimization:
             for dst, cost in self.costs[src].items():
                 if cost > 0:  # Only create variable if cost is positive
                     self.ship[(src, dst)] = LpVariable(f"ship_{src}_{dst}", 0, None, LpInteger)
-
-        # Debug: Print all shipping costs and created variables
-        print("\nDebug - Active Shipping Routes:")
-        for (src, dst), var in self.ship.items():
-            cost = self.costs[src][dst]
-            print(f"Route: {src:20} -> {dst:20} | Cost: ${cost}/unit | Variable: {var.name}")
 
         # Objective function: minimize total cost
         self.prob += lpSum(
@@ -399,6 +405,7 @@ if __name__ == "__main__":
     model.set_shipping_cost("RDC2_Atlanta", "Dallas_TX", 500)
     model.set_shipping_cost("RDC3_Denver", "Seattle_WA", 700)
     model.set_shipping_cost("RDC3_Denver", "Dallas_TX", 600)
+    print(model.get_shipping_cost("RDC1_Chicago", "NewYork_NY"))
     
     # Solve and print results
     solution = model.solve()

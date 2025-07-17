@@ -339,6 +339,20 @@ def get_available_functions() -> List[Dict]:
         {
             "type": "function",
             "function": {
+                "name": "remove_plant",
+                "description": "Remove existing plant",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Name of the plant"}
+                    },
+                    "required": ["name"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "remove_regional_distribution_center",
                 "description": "Remove a regional distribution center",
                 "parameters": {
@@ -380,6 +394,20 @@ def get_available_functions() -> List[Dict]:
                         "state": {"type": "string", "description": "State/region where the store is located"}
                     },
                     "required": ["name", "demand"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "remove_store",
+                "description": "Remove existing store",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Name of the store"}
+                    },
+                    "required": ["name"]
                 }
             }
         },
@@ -432,31 +460,15 @@ def get_available_functions() -> List[Dict]:
         {
             "type": "function",
             "function": {
-                "name": "solve_optimization",
-                "description": "Solve the optimization problem and get the solution",
-                "parameters": {"type": "object", "properties": {}}
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "get_model_info",
-                "description": "Get information about the current model including plants, stores, and shipping costs",
-                "parameters": {"type": "object", "properties": {}}
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "update_capacity",
-                "description": "Update capacity of existing plant",
+                "name":"get_shipping_cost",
+                "description": "Get the shipping cost from source to destination",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "name": {"type": "string", "description": "Name of the plant"},
-                        "capacity": {"type": "number", "description": "New capacity of the plant"}
+                        "src": {"type": "string", "description": "Source node (plant or RDC)"},
+                        "dst": {"type": "string", "description": "Destination node (store or RDC)"}
                     },
-                    "required": ["name", "capacity"]
+                    "required": ["src", "dst"]
                 }
             }
         },
@@ -478,29 +490,32 @@ def get_available_functions() -> List[Dict]:
         {
             "type": "function",
             "function": {
-                "name": "remove_plant",
-                "description": "Remove existing plant",
+                "name": "update_capacity",
+                "description": "Update capacity of existing plant",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "name": {"type": "string", "description": "Name of the plant"}
+                        "name": {"type": "string", "description": "Name of the plant"},
+                        "capacity": {"type": "number", "description": "New capacity of the plant"}
                     },
-                    "required": ["name"]
+                    "required": ["name", "capacity"]
                 }
             }
         },
         {
             "type": "function",
             "function": {
-                "name": "remove_store",
-                "description": "Remove existing store",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string", "description": "Name of the store"}
-                    },
-                    "required": ["name"]
-                }
+                "name": "solve_optimization",
+                "description": "Solve the optimization problem and get the solution",
+                "parameters": {"type": "object", "properties": {}}
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_model_info",
+                "description": "Get information about the current model including plants, stores, and shipping costs",
+                "parameters": {"type": "object", "properties": {}}
             }
         },
         {
@@ -572,13 +587,15 @@ def execute_function_call(function_name: str, function_args: Dict[str, Any]) -> 
         #     model.add_store(function_args["name"], function_args["demand"])
         #     return f"Added store {function_args['name']} with demand {function_args['demand']}"
             
+        elif function_name == "get_shipping_cost":
+            return model.get_shipping_cost(function_args["src"], function_args["dst"])
         elif function_name == "set_shipping_cost":
             model.set_shipping_cost(
-                function_args["plant"],
-                function_args["store"],
+                function_args["src"],
+                function_args["dst"],
                 function_args["cost"]
             )
-            return f"Set shipping cost from {function_args['plant']} to {function_args['store']} to {function_args['cost']}"
+            return f"Set shipping cost from {function_args['src']} to {function_args['dst']} to {function_args['cost']}"
             
         elif function_name == "solve_optimization":
             solution = model.solve()
@@ -655,7 +672,9 @@ def chat_with_ai(user_input: str, messages: List[Dict] = None) -> str:
                 tool_choice="auto"
             )
             response_message = response.choices[0].message
-                        # Check if the AI wants to call a function
+            messages.append(response_message)
+            
+            # Check if the AI wants to call a function
             if response_message.tool_calls:
                 for tool_call in response_message.tool_calls:
                     function_name = tool_call.function.name
@@ -665,13 +684,12 @@ def chat_with_ai(user_input: str, messages: List[Dict] = None) -> str:
                     function_response = execute_function_call(function_name, function_args)
                     
                     # Add the function response to the messages
-                    
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tool_call.id,
-                        "name": function_name,
-                        "content": function_response
+                        "content": str(function_response)
                     })
+                
                 try:
                     # Get a new response from the AI with the function's response
                     second_response = client.chat.completions.create(
@@ -681,12 +699,8 @@ def chat_with_ai(user_input: str, messages: List[Dict] = None) -> str:
                     return second_response.choices[0].message.content
                 except Exception as e:
                     return f"I'm sorry, but I encountered an error while processing the function response: {str(e)}. Please try again."
-            else:
-                messages.append(response_message)
-                             
-            
-            return response_message.content
-            
+            return response_message.content        
+
         except Exception as e:
             error_msg = str(e)
             if "rate_limit" in error_msg.lower():
