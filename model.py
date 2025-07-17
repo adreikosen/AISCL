@@ -141,6 +141,19 @@ class NetworkOptimization:
             dict: Dictionary with 'lat' and 'lon' keys, or None if not found
         """
         return self.locations.get(node_name)
+    
+    def get_shipping_cost(self, src, dst):
+        """
+        Get the shipping cost from source to destination.
+        
+        Args:
+            src (str): Source node (plant or RDC)
+            dst (str): Destination node (store or RDC)
+            
+        Returns:
+            float: Shipping cost from source to destination, or None if not found
+        """
+        return self.costs.get(src, {}).get(dst)
         
     def set_shipping_cost(self, src, dst, cost):
         """Set the shipping cost from source to destination."""

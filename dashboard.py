@@ -88,10 +88,10 @@ if 'messages' not in st.session_state:
 def get_model_data():
     """Extract data from the model for visualization."""
     try:
+        st.session_state.model = app_model
         # Check if model is initialized
         if not hasattr(st.session_state, 'model') or st.session_state.model is None:
             st.warning("Model not initialized. Creating a new instance...")
-            st.session_state.model = app_model  
             
         # Get solution from model
         solution = st.session_state.model.solve()
@@ -104,6 +104,7 @@ def get_model_data():
         # Initialize data structures
         nodes = []
         edges = []
+        non_solution_edges = []
         
         # Add plants with error handling
         for plant in getattr(st.session_state.model, 'plants', []):
@@ -149,6 +150,25 @@ def get_model_data():
             except Exception as e:
                 st.warning(f"Error processing stores {dc}: {str(e)}")
                 continue
+
+        print("ALL COSTS:", getattr(st.session_state.model, 'costs'))
+        for from_node in getattr(st.session_state.model, 'costs'):
+            print("FROM NODE: ", from_node)
+            for to_node in getattr(st.session_state.model, 'costs')[from_node]:
+                print("TO NODE: ", to_node)
+                try:
+                    cost = st.session_state.model.get_shipping_cost(from_node, to_node)
+                    print("costVar: ", st.session_state.model.get_shipping_cost(from_node, to_node))
+                    non_solution_edges.append({
+                        'from': from_node,
+                        'to': to_node,
+                        'label': f" units\n(${cost}/unit)",
+                        'color': 'gray',
+                        'cost': cost
+                        })
+                except Exception as e:
+                    st.warning(f"Error processing edge from {from_node} to {to_node}: {str(e)}")
+                    continue
         
         # Add edges with shipping quantities if solution exists
         if 'solution' in solution and solution['solution']:
@@ -160,7 +180,7 @@ def get_model_data():
                         'to': dc,
                         'label': f"{int(qty)} units\n(${cost}/unit)",
                         'value': qty,
-                        'color': 'gray'
+                        'color': 'red'
                     })
                 except Exception as e:
                     st.warning(f"Error processing edge from {p} to {dc}: {str(e)}")
@@ -169,7 +189,8 @@ def get_model_data():
         return {
             'nodes': nodes,
             'edges': edges,
-            'solution': solution
+            'solution': solution,
+            'non_solution_edges': non_solution_edges
         }
         
     except Exception as e:
@@ -182,18 +203,30 @@ def create_map():
     m = folium.Map(height=500, zoom_control=True, location=[39.8283, -98.5795], zoom_start=4)  # Centered on the geographic center of the US
     
     # Get model data with error handling
+    
     model_data = get_model_data()
+    print("Nodes:", model_data['nodes'])
     if model_data is None or 'nodes' not in model_data:
         st.warning("No model data available. Please initialize the model first.")
         return m
     
+    x_loc = []
+    y_loc = []
     # Add nodes to the map using model-provided locations
     for node in model_data['nodes']:
         node_id = node['id']
+        print(st.session_state.model.locations[node_id]['lat'])
+        print(st.session_state.model.locations[node_id]['lon'])
+
+        
         # Get location from model locations
         if node_id in st.session_state.model.locations:
-            loc = (st.session_state.model.locations[node_id]['lat'], 
-                   st.session_state.model.locations[node_id]['lon'])
+            if st.session_state.model.locations[node_id]['lat'] in y_loc and st.session_state.model.locations[node_id]['lon'] in x_loc:
+                loc = (st.session_state.model.locations[node_id]['lat'] + 0.15, 
+                       st.session_state.model.locations[node_id]['lon'])
+            else:
+                loc = (st.session_state.model.locations[node_id]['lat'], 
+                       st.session_state.model.locations[node_id]['lon'])
         else:
             # If no location is set, use default coordinates
             loc = (39.8283, -98.5795)
@@ -202,13 +235,13 @@ def create_map():
         popup = f"<b>{node['id']}</b><br>"
         if node['type'] == 'plant':
             popup += f"Type: Plant<br>Capacity: {st.session_state.model.capacity[node['id']]}"
-            icon = folium.Icon(icon='industry', color='red')
+            icon = folium.Icon(icon='glyphicon-wrench', color='red')
         elif node['type'] == 'rdc':
             popup += f"Type: RDC"
-            icon = folium.Icon(icon='industry', color='blue')
+            icon = folium.Icon(icon='glyphicon-transfer', color='blue')
         else:
             popup += f"Type: Store<br>Demand: {st.session_state.model.demand[node['id']]}"
-            icon = folium.Icon(icon='warehouse', color='green')
+            icon = folium.Icon(icon='glyphicon-tag', color='green')
         
         folium.Marker(
             location=loc,
@@ -216,9 +249,14 @@ def create_map():
             icon=icon,
             tooltip=node['id']
         ).add_to(m)
+
+        y_loc.append(loc[0])
+        x_loc.append(loc[1])
+        print("y list: ", y_loc)
+        print("x list: ", x_loc)
     
-    # Add edges to the map
-    for edge in model_data['edges']:
+    # Add all edges to map
+    for edge in model_data['non_solution_edges']:
         from_loc = st.session_state.model.locations.get(edge['from'])
         to_loc = st.session_state.model.locations.get(edge['to'])
         if from_loc and to_loc:
@@ -229,7 +267,20 @@ def create_map():
                 opacity=0.7,
                 tooltip=f"{edge['from']} to {edge['to']}: {edge['label']}"
             ).add_to(m)
-    
+
+    # Add solution edges to the map
+    for edge in model_data['edges']:
+        from_loc = st.session_state.model.locations.get(edge['from'])
+        to_loc = st.session_state.model.locations.get(edge['to'])
+        if from_loc and to_loc:
+            folium.PolyLine(
+                locations=[(from_loc['lat'], from_loc['lon']), (to_loc['lat'], to_loc['lon'])],
+                color='red',
+                weight=3,
+                opacity=1,
+                tooltip=f"{edge['from']} to {edge['to']}: {edge['label']}"
+            ).add_to(m)
+
     return m
 
 def add_new_node():
@@ -259,7 +310,7 @@ def add_new_node():
 
 def create_plotly_graph():
     model_data = get_model_data()
-    print("Nodes:", model_data['nodes'])
+    print("Nodes:", model_data['nodes'], "Edges:", model_data['edges'])
     if not model_data:
         return go.Figure()
     
@@ -269,22 +320,33 @@ def create_plotly_graph():
     node_text = []
     node_colors = []
     node_sizes = []
+    node_types = ['Plant', 'RDC', 'Store']
 
     for node in model_data['nodes']:
         if node['id'] in st.session_state.model.locations:
-            loc = (st.session_state.model.locations[node['id']]['lat'], 
-                   st.session_state.model.locations[node['id']]['lon'])
+            if st.session_state.model.locations[node['id']]['lat'] in node_y and st.session_state.model.locations[node['id']]['lon'] in node_x:
+                loc = (st.session_state.model.locations[node['id']]['lat'] + 0.1, 
+                    st.session_state.model.locations[node['id']]['lon'] + 0.1)
+            else:
+                loc = (st.session_state.model.locations[node['id']]['lat'], 
+                    st.session_state.model.locations[node['id']]['lon'])
             node_x.append(loc[1])  # lng
             node_y.append(loc[0])   # lat
         else:
             node_x.append(0)
             node_y.append(0)
         
-        node_text.append(node['label'])
         color = None
-        if node['type'] == 'plant': color = 'red'
-        elif node['type'] == 'rdc': color = 'blue'
-        else: color = 'green'
+        if node['type'] == 'plant': 
+            color = 'red'
+            node_types.append('Plant')
+        elif node['type'] == 'rdc': 
+            color = 'blue'
+            node_types.append('RDC')
+        else: 
+            color = 'green'
+            node_types.append('Store')
+        node_text.append(node_types[-1] + ': ' + node['label'])
         node_colors.append(color)
         node_sizes.append(20)
     
@@ -292,6 +354,9 @@ def create_plotly_graph():
     edge_x = []
     edge_y = []
     edge_text = []
+    non_solution_edge_x = []
+    non_solution_edge_y = []
+    non_solution_edge_text = []
     
     for edge in model_data['edges']:
         if edge['from'] in st.session_state.model.locations and edge['to'] in st.session_state.model.locations:
@@ -301,14 +366,33 @@ def create_plotly_graph():
             edge_x.extend([from_loc['lon'], to_loc['lon'], None])
             edge_y.extend([from_loc['lat'], to_loc['lat'], None])
             edge_text.append(edge['label'])
-    
+
+    for non_solution_edge in model_data['non_solution_edges']:
+        if non_solution_edge['from'] in st.session_state.model.locations and non_solution_edge['to'] in st.session_state.model.locations:
+            from_loc = st.session_state.model.locations[non_solution_edge['from']]
+            to_loc = st.session_state.model.locations[non_solution_edge['to']]
+            
+            non_solution_edge_x.extend([from_loc['lon'], to_loc['lon'], None])
+            non_solution_edge_y.extend([from_loc['lat'], to_loc['lat'], None])
+            non_solution_edge_text.append(non_solution_edge['label'])
+
     # Create edge traces
     edge_trace = go.Scatter(
         x=edge_x, y=edge_y,
-        line=dict(width=1, color='#888'),
+        line=dict(width=1, color='#FF0000'),
         hoverinfo='text',
         mode='lines',
         text=edge_text,
+        hoverlabel=dict(bgcolor='white')
+    )
+    
+    #Create non-essential edge traces
+    non_solution_edge_trace = go.Scatter(
+        x=non_solution_edge_x, y=non_solution_edge_y,
+        line=dict(width=1, color='#888'),
+        hoverinfo='text',
+        mode='lines',
+        text=non_solution_edge_text,
         hoverlabel=dict(bgcolor='white')
     )
     
@@ -322,15 +406,16 @@ def create_plotly_graph():
         marker=dict(
             color=node_colors,
             size=node_sizes,
-            line_width=2
+            line_width=2,
+            opacity=1,
         )
     )
     
     # Create figure
-    fig = go.Figure(data=[edge_trace, node_trace],
+    fig = go.Figure(data=[non_solution_edge_trace, edge_trace, node_trace],
                    layout=go.Layout(
                        title='Network Optimization Model',
-                       showlegend=False,
+                       showlegend=True,
                        hovermode='closest',
                        margin=dict(b=0, l=0, r=0, t=30),
                        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
@@ -396,7 +481,7 @@ def main():
         # Create and display map if we have model data
         if model_data and 'nodes' in model_data and model_data['nodes']:
             m = create_map()
-            st_folium(m, width=1200, height=600)
+            st_folium(m, width=900, height=500)
         else:
             st.warning("No nodes available to display on the map.")
     
@@ -432,12 +517,14 @@ def main():
         chat_history_container = st.container(height=475)
         chat_box_container = st.container()
         
+        print(st.session_state.chat_messages)
         # Display chat history
         with chat_history_container:
             st.subheader("Chat with the AI")
             for message in st.session_state.chat_messages:
-                with st.chat_message(message["role"]):
-                    st.markdown(message["content"])
+                if message["content"] is not None:
+                    with st.chat_message(message["role"]):
+                        st.markdown(message["content"])
 
         # Display chat box
         with chat_box_container:

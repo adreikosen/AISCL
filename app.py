@@ -432,6 +432,21 @@ def get_available_functions() -> List[Dict]:
         {
             "type": "function",
             "function": {
+                "name":"get_shipping_cost",
+                "description": "Get the shipping cost from source to destination",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "src": {"type": "string", "description": "Source node (plant or RDC)"},
+                        "dst": {"type": "string", "description": "Destination node (store or RDC)"}
+                    },
+                    "required": ["src", "dst"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "solve_optimization",
                 "description": "Solve the optimization problem and get the solution",
                 "parameters": {"type": "object", "properties": {}}
@@ -593,10 +608,10 @@ def execute_function_call(function_name: str, function_args: Dict[str, Any]) -> 
             capacity = model.capacity
             demand = model.demand
             return f"""Current Model State:
-                Plants: {plants}
-                Stores: {stores}
-                Shipping Costs: {shipping_costs}
-                Capacity: {capacity}
+                Plants: {plants}<br>
+                Stores: {stores}<br>
+                Shipping Costs: {shipping_costs}<br>
+                Capacity: {capacity}<br>
                 Demand: {demand}"""
             
         elif function_name == "update_capacity":
@@ -653,7 +668,7 @@ def chat_with_ai(user_input: str, messages: List[Dict] = None) -> str:
                 tool_choice="auto"
             )
             response_message = response.choices[0].message
-            
+            messages.append(response_message)
             
             # Check if the AI wants to call a function
             if response_message.tool_calls:
@@ -681,8 +696,7 @@ def chat_with_ai(user_input: str, messages: List[Dict] = None) -> str:
                     return second_response.choices[0].message.content
                 except Exception as e:
                     return f"I'm sorry, but I encountered an error while processing the function response: {str(e)}. Please try again."
-            else:
-                messages.append(response_message)
+                
     
             return response_message.content
             
