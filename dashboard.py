@@ -228,13 +228,14 @@ def get_model_data():
                 st.warning(f"Error processing stores {dc}: {str(e)}")
                 continue
 
-        print("ALL COSTS:", getattr(st.session_state.model, 'costs'))
+        #print("ALL COSTS:", getattr(st.session_state.model, 'costs'))
+
         for from_node in getattr(st.session_state.model, 'costs'):
-            print("FROM NODE: ", from_node)
+            #print("FROM NODE: ", from_node)
             for to_node in getattr(st.session_state.model, 'costs')[from_node]:
-                print("TO NODE: ", to_node)
+                #print("TO NODE: ", to_node)
                 try:
-                    cost = st.session_state.model.get_shipping_cost(from_node, to_node)
+                    cost = st.session_state.model.get_shipping_cost(from_node, to_node)  
                     print("costVar: ", st.session_state.model.get_shipping_cost(from_node, to_node))
                     non_solution_edges.append({
                         'from': from_node,
@@ -246,22 +247,33 @@ def get_model_data():
                 except Exception as e:
                     st.warning(f"Error processing edge from {from_node} to {to_node}: {str(e)}")
                     continue
-        
+
         # Add edges with shipping quantities if solution exists
         if 'solution' in solution and solution['solution']:
             for (p, dc), qty in solution['solution'].items():
                 try:
                     cost = getattr(st.session_state.model, 'costs', {}).get(p, {}).get(dc, 'N/A')
+                    default_weight = 0
                     edges.append({
                         'from': p,
                         'to': dc,
                         'label': f"{int(qty)} units\n(${cost}/unit)",
                         'value': qty,
-                        'color': '#90ee91'
+                        'color': '#90ee91',
+                        'weight': default_weight   
                     })
                 except Exception as e:
                     st.warning(f"Error processing edge from {p} to {dc}: {str(e)}")
                     continue
+        
+        max_qty = 0
+        for edge in edges:
+            qty = edge['value']
+            if qty > max_qty:
+                max_qty = qty
+
+        for edge in edges:
+            edge['weight'] = (edge['value'] / max_qty) * 5
         
         return {
             'nodes': nodes,
@@ -344,7 +356,7 @@ def create_map():
                 opacity=0.7,
                 tooltip=f"{edge['from']} to {edge['to']}: {edge['label']}"
             ).add_to(m)
-
+    
     # Add solution edges to the map
     for edge in model_data['edges']:
         from_loc = st.session_state.model.locations.get(edge['from'])
@@ -353,7 +365,7 @@ def create_map():
             folium.PolyLine(
                 locations=[(from_loc['lat'], from_loc['lon']), (to_loc['lat'], to_loc['lon'])],
                 color='#90ee91',
-                weight=3,
+                weight=edge['weight'],
                 opacity=1,
                 tooltip=f"{edge['from']} to {edge['to']}: {edge['label']}"
             ).add_to(m)
