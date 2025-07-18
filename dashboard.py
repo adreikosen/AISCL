@@ -18,7 +18,8 @@ from app import (
     add_store_with_geocoding,
     add_plant_with_geocoding,
     add_rdc_with_geocoding,
-    initialize_model
+    initialize_model,
+    prompt
 )
 
 # Load environment variables
@@ -75,12 +76,7 @@ def initialize_dashboard_model():
 
 # Initialize session state
 if 'messages' not in st.session_state:
-    st.session_state.messages = [{
-        "role": "system",
-        "content": """You are a helpful assistant for network optimization. You can help users model and solve network optimization problems in supply chain."
-        You can also help users create and compare different scenarios by taking snapshots of the model at different points in time.
-        When comparing models, make sure to highlight the key differences and their business implications. A base model has been preloaded into the system."""
-    }]
+    st.session_state.messages = [prompt]
     st.session_state.snapshots = {}
     st.session_state.locations = {}
     st.session_state.last_clicked = None
@@ -151,14 +147,10 @@ def get_model_data():
                 st.warning(f"Error processing stores {dc}: {str(e)}")
                 continue
 
-        print("ALL COSTS:", getattr(st.session_state.model, 'costs'))
         for from_node in getattr(st.session_state.model, 'costs'):
-            print("FROM NODE: ", from_node)
             for to_node in getattr(st.session_state.model, 'costs')[from_node]:
-                print("TO NODE: ", to_node)
                 try:
                     cost = st.session_state.model.get_shipping_cost(from_node, to_node)
-                    print("costVar: ", st.session_state.model.get_shipping_cost(from_node, to_node))
                     non_solution_edges.append({
                         'from': from_node,
                         'to': to_node,
@@ -205,7 +197,6 @@ def create_map():
     # Get model data with error handling
     
     model_data = get_model_data()
-    print("Nodes:", model_data['nodes'])
     if model_data is None or 'nodes' not in model_data:
         st.warning("No model data available. Please initialize the model first.")
         return m
@@ -215,9 +206,7 @@ def create_map():
     # Add nodes to the map using model-provided locations
     for node in model_data['nodes']:
         node_id = node['id']
-        print(st.session_state.model.locations[node_id]['lat'])
-        print(st.session_state.model.locations[node_id]['lon'])
-
+        
         
         # Get location from model locations
         if node_id in st.session_state.model.locations:
@@ -252,9 +241,7 @@ def create_map():
 
         y_loc.append(loc[0])
         x_loc.append(loc[1])
-        print("y list: ", y_loc)
-        print("x list: ", x_loc)
-    
+
     # Add all edges to map
     for edge in model_data['non_solution_edges']:
         from_loc = st.session_state.model.locations.get(edge['from'])
@@ -310,7 +297,6 @@ def add_new_node():
 
 def create_plotly_graph():
     model_data = get_model_data()
-    print("Nodes:", model_data['nodes'], "Edges:", model_data['edges'])
     if not model_data:
         return go.Figure()
     
@@ -517,12 +503,11 @@ def main():
         chat_history_container = st.container(height=475)
         chat_box_container = st.container()
         
-        print(st.session_state.chat_messages)
         # Display chat history
         with chat_history_container:
             st.subheader("Chat with the AI")
             for message in st.session_state.chat_messages:
-                if message["content"] is not None:
+                if message["content"] is not None and message["role"] != "tool":
                     with st.chat_message(message["role"]):
                         st.markdown(message["content"])
 
@@ -535,7 +520,6 @@ def main():
                     chat_with_ai(prompt, st.session_state.chat_messages)
                 
                 # Rerun to update the chat display
-                print(st.session_state.chat_messages)
                 st.rerun()
 
 
