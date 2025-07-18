@@ -95,6 +95,13 @@ def create_info_tables(model):
         solution_routes = set()
         if solution and 'solution' in solution and solution['solution']:
             solution_routes = set(solution['solution'].keys())
+            
+        # Calculate used capacity for each plant based on the optimal solution
+        used_capacity = {p: 0 for p in getattr(model, 'plants', [])}
+        if solution and 'solution' in solution and solution['solution']:
+            for (src, _), amount in solution['solution'].items():
+                if src in used_capacity:
+                    used_capacity[src] += amount
         
         # Prepare plants data
         for plant in getattr(model, 'plants', []):
@@ -106,6 +113,7 @@ def create_info_tables(model):
             plants_data.append({
                 'Name': plant,
                 'Capacity': capacity,
+                'Used Capacity': used_capacity.get(plant, 0),
                 'Coordinates': coord_str
             })
         
@@ -224,19 +232,14 @@ def get_model_data():
                 st.warning(f"Error processing stores {dc}: {str(e)}")
                 continue
 
-        #print("ALL COSTS:", getattr(st.session_state.model, 'costs'))
-
         for from_node in getattr(st.session_state.model, 'costs'):
-            #print("FROM NODE: ", from_node)
             for to_node in getattr(st.session_state.model, 'costs')[from_node]:
-                #print("TO NODE: ", to_node)
                 try:
                     cost = st.session_state.model.get_shipping_cost(from_node, to_node)  
-                    print("costVar: ", st.session_state.model.get_shipping_cost(from_node, to_node))
                     non_solution_edges.append({
                         'from': from_node,
                         'to': to_node,
-                        'label': f" units\n(${cost}/unit)",
+                        'label': f"{cost} units\n(${cost}/unit)",
                         'color': 'gray',
                         'cost': cost
                         })
@@ -345,7 +348,7 @@ def create_map():
                 color='gray',
                 weight=2,
                 opacity=0.7,
-                tooltip=f"{edge['from']} to {edge['to']}: {edge['label']}"
+                tooltip=f"{edge['from']} to {edge['to']}"
             ).add_to(m)
     
     # Add solution edges to the map
@@ -608,8 +611,8 @@ def main():
         if 'model' in st.session_state and st.session_state.model is not None:
             try:
                 solution = st.session_state.model.solve()
-                if solution and 'total_cost' in solution and solution['total_cost'] is not None:
-                    st.metric("Total Cost", f"${float(solution['total_cost']):,.2f}")
+                if solution and 'total_shipping_cost' in solution and solution['total_shipping_cost'] is not None:
+                    st.metric("Total Shipping Cost", f"${solution['total_shipping_cost']:,.2f}")
                 else:
                     st.warning("No solution available. The model might be empty or invalid.")
             except Exception as e:
@@ -622,7 +625,7 @@ def main():
         
         # Display chat history
         with chat_history_container:
-            st.subheader("Chat with the AI")
+            st.subheader("Chat with KIT")
             for message in st.session_state.chat_messages:
                 if message["content"] is not None and message["role"] != "tool":
                     with st.chat_message(message["role"]):

@@ -28,7 +28,6 @@ class NetworkOptimization:
         #fixed variable for cost for plant ops
         #variable cost for plant ops
         
-    
     def clear_model(self):
         """Clear the model."""
         self.plants = []
@@ -64,10 +63,16 @@ class NetworkOptimization:
             self.set_location(name, lat, lon)
     
     def remove_plant(self, name):
-        """Remove a plant."""
+        """Remove a plant and all associated cost entries."""
         self.plants.remove(name)
+        # Remove capacity and outbound costs from the plant
         del self.capacity[name]
         del self.costs[name]
+        # Remove any inbound cost entries that reference the plant
+        for src in list(self.costs.keys()):
+            if name in self.costs[src]:
+                del self.costs[src][name]
+        # Remove location if present
         if name in self.locations:
             del self.locations[name]
         
@@ -235,7 +240,7 @@ class NetworkOptimization:
         if src not in self.costs:
             self.costs[src] = {}
         self.costs[src][dst] = round(cost, 2)
-        
+
         return self.costs[src][dst]
     
     def get_shipping_cost(self, src, dst):
@@ -274,8 +279,20 @@ class NetworkOptimization:
                 except ValueError as e:
                     print(f"[recalculate_shipping_costs] Skipping {rdc} → {store}: {e}")
 
-        print("Shipping costs have been recalculated for all plant→RDC and RDC→store routes.")
-    
+    def set_route_cost(self, src, dst, cost):
+        """Manually set/override the shipping cost for a specific route.
+
+        Args:
+            src (str): Source node name (Plant or RDC)
+            dst (str): Destination node name (RDC or Store)
+            cost (float): Cost per unit to assign to the route
+        """
+        if cost < 0:
+            raise ValueError("Cost must be non-negative")
+        if src not in self.costs:
+            self.costs[src] = {}
+        self.costs[src][dst] = round(cost, 2)
+
     def update_capacity(self, plant, new_capacity):
         """Update the capacity of a plant."""
         if plant not in self.plants:
@@ -299,11 +316,11 @@ class NetworkOptimization:
                 if cost > 0:  # Only create variable if cost is positive
                     self.ship[(src, dst)] = LpVariable(f"ship_{src}_{dst}", 0, None, LpInteger)
 
-        # Objective function: minimize total cost
+        # Objective function: minimize total shipping cost only
         self.prob += lpSum(
             self.ship[(src, dst)] * self.costs[src][dst]
-            for (src, dst) in self.ship
-        ), "Total_Cost"
+         for (src, dst) in self.ship
+         ), "Total_Cost"
 
         # Plant supply constraints
         for plant in self.plants:
@@ -350,10 +367,14 @@ class NetworkOptimization:
             for (src, dst), var in self.ship.items()
             if var.varValue and var.varValue > 0
         }
-    
+
+        total_shipping_cost = 0
+        for (src, dst), qty in solution.items():
+            total_shipping_cost += self.costs.get(src, {}).get(dst, 0) * qty
+
         return {
             'status': LpStatus[status],
-            'total_cost': value(self.prob.objective),
+            'total_shipping_cost': total_shipping_cost,
             'solution': solution
         }
     
@@ -364,10 +385,14 @@ class NetworkOptimization:
         if result['status'] != 'Optimal':
             return f"Solution status: {result['status']}"
             
-        output = [f"Optimal Solution Found - Total Cost: ${result['total_cost']:,.2f}\n"]
+        output = [
+            "Optimal Solution Found\n",
+            f"Total Shipping Cost: ${result['total_shipping_cost']:,.2f}\n"
+        ]
         output.append("\nShipping Plan:")
-        for (src, dst), qty in result['solution'].items():
-            output.append(f"Ship {int(qty)} units from {src} to {dst}")
+        for (src, dst), amount in result['solution'].items():
+            if amount > 0:  # Only show routes with shipments
+                output.append(f"Ship {int(amount)} units from {src} to {dst}")
         
         return "\n".join(output)
 
@@ -476,7 +501,7 @@ if __name__ == "__main__":
     # Add regional distribution centers
     model.add_regional_distribution_center("RDC1_Chicago", 41.8781, -87.6298)  # Midwest hub
     model.add_regional_distribution_center("RDC2_Atlanta", 33.7490, -84.3880)  # Southeast hub
-    model.add_regional_distribution_center("RDC3_Denver", 39.7392, -104.9849)  # Central hub
+    #model.add_regional_distribution_center("RDC3_Denver", 39.7392, -104.9849)  # Central hub
     
     # Add stores with demands (in units) and locations
     model.add_store("NewYork_NY", 7000, 40.7128, -74.0060)     # High population density

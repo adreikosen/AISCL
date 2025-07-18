@@ -188,6 +188,16 @@ def add_rdc_with_geocoding(name: str, city: str = None, state: str = None) -> st
             
     except Exception as e:
         return f"Error adding RDC: {str(e)}"
+    
+def set_route_cost(src, dst, cost):
+    global model
+    if model is None:
+        return "Error: Model not initialized"
+    try:
+        model.set_route_cost(src, dst, cost)
+        return f"Set cost for route {src} → {dst} to {cost}"
+    except Exception as e:
+        return f"Error setting route cost: {str(e)}"
 
 def initialize_model():
     """Initialize the model with default values using US cities."""
@@ -228,6 +238,7 @@ def create_snapshot(snapshot_name: str = None) -> str:
         snapshot_name = f"snapshot_{len(snapshots) + 1}"
     snapshots[snapshot_name] = model.copy(snapshot_name)
     return f"Created snapshot '{snapshot_name}' of the current model."
+    
 
 def compare_with_snapshot(snapshot_name: str) -> str:
     """
@@ -285,13 +296,32 @@ def compare_with_snapshot(snapshot_name: str) -> str:
         new_solution = model.solve()
         
         output.append("\n=== Solution Comparison ===")
-        output.append(f"Snapshot total cost: ${old_solution.get('total_cost', 'N/A'):,.2f}")
-        output.append(f"Current total cost: ${new_solution.get('total_cost', 'N/A'):,.2f}")
-        
-        if old_solution.get('total_cost') and new_solution.get('total_cost'):
-            cost_diff = new_solution['total_cost'] - old_solution['total_cost']
+        # Weighted objective
+        old_obj = old_solution.get('weighted_objective', old_solution.get('total_cost'))
+        new_obj = new_solution.get('weighted_objective', new_solution.get('total_cost'))
+        output.append(f"Snapshot weighted objective: ${old_obj:,.2f}")
+        output.append(f"Current weighted objective: ${new_obj:,.2f}")
+
+        if old_obj is not None and new_obj is not None:
+            diff = new_obj - old_obj
+            change = "increase" if diff > 0 else "decrease"
+            output.append(f"Change in objective: ${abs(diff):,.2f} ({change})")
+
+        # Pure shipping cost
+        if 'total_shipping_cost' in old_solution and 'total_shipping_cost' in new_solution:
+            old_cost = old_solution['total_shipping_cost']
+            new_cost = new_solution['total_shipping_cost']
+            cost_diff = new_cost - old_cost
             change = "increase" if cost_diff > 0 else "decrease"
-            output.append(f"Change in total cost: ${abs(cost_diff):,.2f} ({change})")
+            output.append(f"Shipping cost change: ${abs(cost_diff):,.2f} ({change})")
+
+        # Travel time
+        if 'total_time' in old_solution and 'total_time' in new_solution:
+            old_time = old_solution['total_time']
+            new_time = new_solution['total_time']
+            time_diff = new_time - old_time
+            change = "increase" if time_diff > 0 else "decrease"
+            output.append(f"Travel time change: {abs(time_diff):,.2f} hours ({change})")
     
     except Exception as e:
         output.append(f"\nCould not compare solutions due to error: {str(e)}")
@@ -523,6 +553,22 @@ def get_available_functions() -> List[Dict]:
                 "description": "Recalculate all shipping costs based on the current model state using the geocoded locations of plants, stores, and RDCs",
                 "parameters": {"type": "object", "properties": {}}
             }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "set_route_cost",
+                "description": "Manually set/override the cost for a specific route. Use this when a user wants to make specific changes to shipping costs associated with a route",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "source": {"type": "string", "description": "Name of the source node"},
+                        "destination": {"type": "string", "description": "Name of the destination node"},
+                        "cost": {"type": "number", "description": "Cost per unit"}
+                    },
+                    "required": ["source", "destination", "cost"]
+                }
+            }
         }
     ]
 
@@ -536,10 +582,13 @@ def execute_function_call(function_name: str, function_args: Dict[str, Any]) -> 
         elif function_name == "add_rdc_with_geocoding":
             return add_rdc_with_geocoding(**function_args)
         elif function_name == "solve_optimization":
-            solution = model.solve()
+            # Preserve state before solving in a snapshot for later comparison
             snapshot_name = f"pre_solve_{len(snapshots) + 1}"
             create_snapshot(snapshot_name)
-            return f"Optimization complete. {solution}"
+
+            # Solve and return a human-readable summary
+            summary = model.get_solution_summary()
+            return f"Optimization complete.\n\n{summary}"
             
         elif function_name == "get_model_info":
             plants = model.plants
@@ -596,6 +645,9 @@ def execute_function_call(function_name: str, function_args: Dict[str, Any]) -> 
             model.recalculate_shipping_costs()
             return "All shipping costs have been recalculated"
             
+        elif function_name == "set_route_cost":
+            return set_route_cost(function_args["source"], function_args["destination"], function_args["cost"])
+            
         else:        
             return f"Unknown function: {function_name}"
     except Exception as e:
@@ -622,6 +674,7 @@ def chat_with_ai(user_input: str, messages: List[Dict] = None) -> str:
             # Check if the AI wants to call a function
             if response_message.tool_calls:
                 for tool_call in response_message.tool_calls:
+                    print(tool_call)
                     function_name = tool_call.function.name
                     function_args = json.loads(tool_call.function.arguments)
                     
@@ -667,8 +720,24 @@ def main():
     print("You can add plants, stores, set shipping costs, and solve the optimization problem.")
     print("Type 'exit' to quit.\n")
     
-    messages = [prompt]
-    print(messages)
+    messages = [{"role": "system", "content": """You are a helpful assistant specialized in network optimization for supply chains. Your role is to help users model and solve problems involving a three-tier distribution network:
+         - Plants (with defined shipping capacities)
+         - Regional distribution centers (which must follow conservation of flow)
+         - Retail stores (with specific demand that must be satisfied)
+         The objective of the model is to minimize total shipping cost while fulfilling all demand and respecting all capacity and flow constraints.
+
+        Shipping Cost Calculation:
+        - whenever changes are made to the model (adding or removing nodes), you recalculate shipping costs for all Plant→RDC and RDC→Store routes
+        - explain these shipping cost changes in a clear and concise manner to the user after recalculating shipping costs
+
+        Result Explanation:
+        - whenever the model is solved, you explain the results in a clear and concise manner to the user
+        - interpret the results in the context of a company's supply chain
+        
+       
+       A base model, including all node coordinates (plants, distribution centers, and stores), has already been loaded into the system.
+
+       You may perform multiple steps in a single response without needing additional user input, as long as all calculations strictly follow the above instructions."""}]
     
     while True:
         try:
