@@ -1,7 +1,11 @@
+from math import radians, sin, cos, sqrt, atan2
 from pulp import *
 from copy import deepcopy
 
 class NetworkOptimization:
+    # Cost per mile for shipping
+    COST_PER_MILE = 2.38
+    
     def __init__(self, name="Network_Optimization_Model"):
         """
         Initialize the network optimization model.
@@ -46,7 +50,13 @@ class NetworkOptimization:
             lat (float, optional): Latitude of the plant location
             lon (float, optional): Longitude of the plant location
             **kwargs: For backward compatibility
+            
+        Raises:
+            ValueError: If a plant with the same name already exists
         """
+        if name in self.plants:
+            raise ValueError(f"A plant with name '{name}' already exists. Please use a unique name or remove the existing plant first.")
+            
         self.plants.append(name)
         self.capacity[name] = capacity
         self.costs[name] = {}  # Don't initialize any costs here
@@ -98,7 +108,13 @@ class NetworkOptimization:
             lat (float, optional): Latitude of the store location
             lon (float, optional): Longitude of the store location
             **kwargs: For backward compatibility
+            
+        Raises:
+            ValueError: If a store with the same name already exists
         """
+        if name in self.stores:
+            raise ValueError(f"A store with name '{name}' already exists. Please use a unique name or remove the existing store first.")
+            
         self.stores.append(name)
         self.demand[name] = demand
         if lat is not None and lon is not None:
@@ -108,16 +124,23 @@ class NetworkOptimization:
     def add_regional_distribution_center(self, name, lat=None, lon=None, **kwargs):
         """
         Add a regional distribution center (RDC).
+        
         Args:
             name (str): Name of the RDC
-            lat (float, optional): Latitude
-            lon (float, optional): Longitude
+            lat (float, optional): Latitude of the RDC location
+            lon (float, optional): Longitude of the RDC location
             **kwargs: For backward compatibility
+            
+        Raises:
+            ValueError: If an RDC with the same name already exists
         """
+        if name in self.regional_distribution_centers:
+            raise ValueError(f"An RDC with name '{name}' already exists. Please use a unique name or remove the existing RDC first.")
+            
         self.regional_distribution_centers.append(name)
         if lat is not None and lon is not None:
             self.set_location(name, lat, lon)
-        # Don't initialize any costs here   
+        # Don't initialize any costs here
     
     def set_location(self, node_name, lat, lon):
         """
@@ -138,20 +161,121 @@ class NetworkOptimization:
             node_name (str): Name of the node (plant or store)
             
         Returns:
-            dict: Dictionary with 'lat' and 'lon' keys, or None if not found
+        dict: Dictionary with 'lat' and 'lon' keys, or None if not found
         """
         return self.locations.get(node_name)
+    
+    def _haversine_distance(self, lat1, lon1, lat2, lon2):
+        """
+        Calculate the great circle distance between two points 
+        on the earth specified in decimal degrees.
         
-    def set_shipping_cost(self, src, dst, cost):
-        """Set the shipping cost from source to destination."""
+        Args:
+            lat1, lon1: Latitude and Longitude of point 1 in decimal degrees
+            lat2, lon2: Latitude and Longitude of point 2 in decimal degrees
+            
+        Returns:
+            float: Distance between the two points in miles
+        """
+        # Convert decimal degrees to radians
+        lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
+        
+        # Haversine formula
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+        a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+        c = 2 * atan2(sqrt(a), sqrt(1-a))
+        
+        # Radius of Earth in miles
+        R = 3956
+        
+        # Calculate the distance in miles
+        distance = R * c
+        return distance
+
+    def calculate_shipping_cost(self, src, dst, cost=None):
+        """
+        Calculate and set the shipping cost from source to destination.
+        If cost is not provided, it will be calculated based on distance.
+        
+        Args:
+            src (str): Source node (plant or RDC)
+            dst (str): Destination node (store or RDC)
+            cost (float, optional): Cost per unit. If None, will be calculated.
+            
+        Returns:
+            float: The calculated or provided shipping cost
+            
+        Raises:
+            ValueError: If source or destination is invalid or missing coordinates
+        """
         if src not in self.plants and src not in self.regional_distribution_centers:
             raise ValueError(f"Unknown source: {src}")
         if dst not in self.stores and dst not in self.regional_distribution_centers:
             raise ValueError(f"Unknown destination: {dst}")
+            
+        # Calculate cost if not provided
+        if cost is None:
+            src_loc = self.get_location(src)
+            dst_loc = self.get_location(dst)
+            
+            if not src_loc or 'lat' not in src_loc or 'lon' not in src_loc:
+                raise ValueError(f"Source location '{src}' is missing coordinates")
+            if not dst_loc or 'lat' not in dst_loc or 'lon' not in dst_loc:
+                raise ValueError(f"Destination location '{dst}' is missing coordinates")
+                
+            # Calculate distance and cost
+            distance = self._haversine_distance(
+                src_loc['lat'], src_loc['lon'],
+                dst_loc['lat'], dst_loc['lon']
+            )
+            cost = 2.38 * round(distance * self.COST_PER_MILE, 2)
+        
+        # Store the cost
         if src not in self.costs:
             self.costs[src] = {}
-        self.costs[src][dst] = cost
+        self.costs[src][dst] = round(cost, 2)
+        
+        return self.costs[src][dst]
+    
+    def get_shipping_cost(self, src, dst):
+        """
+        Get the shipping cost from source to destination.
+        
+        Args:
+            src (str): Source node (plant or RDC)
+            dst (str): Destination node (store or RDC)
             
+        Returns:
+            float: Shipping cost from source to destination, or None if not found
+        """
+        return self.costs.get(src, {}).get(dst)
+
+    def recalculate_shipping_costs(self):
+        """
+        Recalculate shipping costs for all Plant→RDC and RDC→Store routes
+        based on current node locations. Existing costs for these routes
+        will be overwritten.
+        """
+        # Plant → RDC routes
+        for plant in self.plants:
+            for rdc in self.regional_distribution_centers:
+                try:
+                    self.calculate_shipping_cost(plant, rdc)
+                except ValueError as e:
+                    # Skip routes where either node lacks coordinates
+                    print(f"[recalculate_shipping_costs] Skipping {plant} → {rdc}: {e}")
+
+        # RDC → Store routes
+        for rdc in self.regional_distribution_centers:
+            for store in self.stores:
+                try:
+                    self.calculate_shipping_cost(rdc, store)
+                except ValueError as e:
+                    print(f"[recalculate_shipping_costs] Skipping {rdc} → {store}: {e}")
+
+        print("Shipping costs have been recalculated for all plant→RDC and RDC→store routes.")
+    
     def update_capacity(self, plant, new_capacity):
         """Update the capacity of a plant."""
         if plant not in self.plants:
@@ -174,12 +298,6 @@ class NetworkOptimization:
             for dst, cost in self.costs[src].items():
                 if cost > 0:  # Only create variable if cost is positive
                     self.ship[(src, dst)] = LpVariable(f"ship_{src}_{dst}", 0, None, LpInteger)
-
-        # Debug: Print all shipping costs and created variables
-        print("\nDebug - Active Shipping Routes:")
-        for (src, dst), var in self.ship.items():
-            cost = self.costs[src][dst]
-            print(f"Route: {src:20} -> {dst:20} | Cost: ${cost}/unit | Variable: {var.name}")
 
         # Objective function: minimize total cost
         self.prob += lpSum(
@@ -351,37 +469,23 @@ if __name__ == "__main__":
     model = NetworkOptimization("US_Transportation_Network")
     
     # Add plants with capacities (in units) and locations
-    model.add_plant("Chicago_IL", 10000, 41.8781, -87.6298)    # Major manufacturing hub
-    model.add_plant("Houston_TX", 8500, 29.7604, -95.3698)     # Major industrial center
-    model.add_plant("LosAngeles_CA", 9500, 34.0522, -118.2437)  # West Coast manufacturing
+    model.add_plant("Chicago_IL", 13000, 41.8781, -87.6298)    # Major manufacturing hub
+    model.add_plant("Houston_TX", 14500, 29.7604, -95.3698)     # Major industrial center
+    model.add_plant("LosAngeles_CA", 12500, 34.0522, -118.2437)  # West Coast manufacturing
     
     # Add regional distribution centers
     model.add_regional_distribution_center("RDC1_Chicago", 41.8781, -87.6298)  # Midwest hub
     model.add_regional_distribution_center("RDC2_Atlanta", 33.7490, -84.3880)  # Southeast hub
-    model.add_regional_distribution_center("RDC3_Denver", 39.7392, -104.9903)  # Central hub
+    model.add_regional_distribution_center("RDC3_Denver", 39.7392, -104.9849)  # Central hub
     
     # Add stores with demands (in units) and locations
-    model.add_store("NewYork_NY", 8000, 40.7128, -74.0060)     # High population density
-    model.add_store("Miami_FL", 6000, 25.7617, -80.1918)       # Southeast retail hub
+    model.add_store("NewYork_NY", 7000, 40.7128, -74.0060)     # High population density
+    model.add_store("Miami_FL", 5500, 25.7617, -80.1918)       # Southeast retail hub
     model.add_store("Seattle_WA", 5000, 47.6062, -122.3321)    # Pacific Northwest
-    model.add_store("Dallas_TX", 7000, 32.7767, -96.7970)      # Major Texas market
-    
-    # Set shipping costs (in dollars per unit)
-    # Plants to RDCs
-    model.set_shipping_cost("Chicago_IL", "RDC1_Chicago", 500)
-    model.set_shipping_cost("Chicago_IL", "RDC2_Atlanta", 1200)
-    model.set_shipping_cost("Houston_TX", "RDC2_Atlanta", 800)
-    model.set_shipping_cost("Houston_TX", "RDC3_Denver", 1000)
-    model.set_shipping_cost("LosAngeles_CA", "RDC3_Denver", 700)
-    model.set_shipping_cost("LosAngeles_CA", "RDC1_Chicago", 1500)
-    
-    # RDCs to Stores
-    model.set_shipping_cost("RDC1_Chicago", "NewYork_NY", 800)
-    model.set_shipping_cost("RDC2_Atlanta", "Miami_FL", 600)
-    model.set_shipping_cost("RDC2_Atlanta", "Dallas_TX", 500)
-    model.set_shipping_cost("RDC3_Denver", "Seattle_WA", 700)
-    model.set_shipping_cost("RDC3_Denver", "Dallas_TX", 600)
-    
+    model.add_store("Dallas_TX", 6500, 32.7767, -96.7970)      # Major Texas market
+    model.add_store("Boston_MA", 5000, 42.3601, -71.0589)      # Major Northeast market
+    model.add_store("LasVegas_NV", 8000, 36.1699, -115.1398)      # Major West Coast market
+    model.recalculate_shipping_costs()
     # Solve and print results
     solution = model.solve()
     print("\nOptimal Solution:")

@@ -15,6 +15,27 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 # Global variables
 model = None
 snapshots = {}
+prompt = {
+        "role": "system",
+        "content": """You are a helpful assistant specialized in network optimization for supply chains. Your role is to help users model and solve problems involving a three-tier distribution network:
+         - Plants (with defined shipping capacities)
+         - Regional distribution centers (which must follow conservation of flow)
+         - Retail stores (with specific demand that must be satisfied)
+         The objective of the model is to minimize total shipping cost while fulfilling all demand and respecting all capacity and flow constraints.
+
+        Shipping Cost Calculation:
+        - whenever changes are made to the model (adding or removing nodes), you recalculate shipping costs for all Plant→RDC and RDC→Store routes
+        - explain these shipping cost changes in a clear and concise manner to the user after recalculating shipping costs
+
+        Result Explanation:
+        - whenever the model is solved, you explain the results in a clear and concise manner to the user
+        - interpret the results in the context of a company's supply chain
+        
+       
+       A base model, including all node coordinates (plants, distribution centers, and stores), has already been loaded into the system.
+
+       You may perform multiple steps in a single response without needing additional user input, as long as all calculations strictly follow the above instructions."""
+    }
 
 def geocode_location(location_name: str) -> Optional[Tuple[float, float]]:
     """
@@ -80,7 +101,7 @@ def add_plant_with_geocoding(name: str, capacity: int, city: str = None, state: 
         
         # Add the plant with or without location data
         model.add_plant(name, capacity, lat, lon)
-        
+        model.recalculate_shipping_costs()
         if lat is not None and lon is not None:
             return f"Added plant '{name}' with capacity {capacity} at location ({lat:.4f}, {lon:.4f})"
         else:
@@ -119,6 +140,7 @@ def add_store_with_geocoding(name: str, demand: int, city: str = None, state: st
         
         # Add the store with or without location data
         model.add_store(name, demand, lat, lon)
+        model.recalculate_shipping_costs()
         
         if lat is not None and lon is not None:
             return f"Added store '{name}' with demand {demand} at location ({lat:.4f}, {lon:.4f})"
@@ -157,6 +179,7 @@ def add_rdc_with_geocoding(name: str, city: str = None, state: str = None) -> st
         
         # Add the RDC with or without location data
         model.add_regional_distribution_center(name, lat, lon)
+        model.recalculate_shipping_costs()
         
         if lat is not None and lon is not None:
             return f"Added RDC '{name}' at location ({lat:.4f}, {lon:.4f})"
@@ -169,38 +192,26 @@ def add_rdc_with_geocoding(name: str, city: str = None, state: str = None) -> st
 def initialize_model():
     """Initialize the model with default values using US cities."""
     global model
-    model = NetworkOptimization("US_Base_Model")
+    model = NetworkOptimization("US_Transportation_Network")
+    # Add plants with capacities (in units) and locations
+    model.add_plant("Chicago_IL", 13000, 41.8781, -87.6298)    # Major manufacturing hub
+    model.add_plant("Houston_TX", 14500, 29.7604, -95.3698)     # Major industrial center
+    model.add_plant("LosAngeles_CA", 12500, 34.0522, -118.2437)  # West Coast manufacturing
     
-    # Add plants (manufacturing facilities) with production capacities (in units) and locations
-    model.add_plant("Chicago_IL", 10000, lat=41.8781, lon=-87.6298)    # Major manufacturing hub in the Midwest
-    model.add_plant("Houston_TX", 8500, lat=29.7604, lon=-95.3698)     # Major industrial center in the South
-    model.add_plant("LosAngeles_CA", 9500, lat=34.0522, lon=-118.2437)  # Major West Coast manufacturing center
-    
-    # Add Regional Distribution Centers with locations
-    model.add_regional_distribution_center("RDC1_Chicago", lat=41.8781, lon=-87.6298)  # Same as Chicago plant
-    model.add_regional_distribution_center("RDC2_Atlanta", lat=33.7490, lon=-84.3880)  # Major logistics hub
-    model.add_regional_distribution_center("RDC3_Denver", lat=39.7392, lon=-104.9903)  # Central distribution point
+    # Add regional distribution centers
+    model.add_regional_distribution_center("RDC1_Chicago", 41.8781, -87.6298)  # Midwest hub
+    model.add_regional_distribution_center("RDC2_Atlanta", 33.7490, -84.3880)  # Southeast hub
     
     # Add stores with demands (in units) and locations
-    model.add_store("NewYork_NY", 8000, lat=40.7128, lon=-74.0060)    # High population density
-    model.add_store("Miami_FL", 6000, lat=25.7617, lon=-80.1918)      # Major Southeastern hub
-    model.add_store("Seattle_WA", 5000, lat=47.6062, lon=-122.3321)   # Pacific Northwest
-    model.add_store("Dallas_TX", 7000, lat=32.7767, lon=-96.7970)     # Major Texas hub
+    model.add_store("NewYork_NY", 7000, 40.7128, -74.0060)     # High population density
+    model.add_store("Miami_FL", 5500, 25.7617, -80.1918)       # Southeast retail hub
+    model.add_store("Seattle_WA", 5000, 47.6062, -122.3321)    # Pacific Northwest
+    model.add_store("Dallas_TX", 6500, 32.7767, -96.7970)      # Major Texas market
+    model.add_store("Boston_MA", 5000, 42.3601, -71.0589)      # Major Northeast market
+    model.add_store("LasVegas_NV", 8000, 36.1699, -115.1398)      # Major West Coast market
     
-    # Set shipping costs from plants to RDCs (in dollars per unit)
-    model.set_shipping_cost("Chicago_IL", "RDC1_Chicago", 500)    # Local transfer
-    model.set_shipping_cost("Chicago_IL", "RDC2_Atlanta", 1200)   # Chicago to Atlanta
-    model.set_shipping_cost("Houston_TX", "RDC2_Atlanta", 800)    # Houston to Atlanta
-    model.set_shipping_cost("Houston_TX", "RDC3_Denver", 1000)    # Houston to Denver
-    model.set_shipping_cost("LosAngeles_CA", "RDC3_Denver", 700)  # LA to Denver
-    model.set_shipping_cost("LosAngeles_CA", "RDC1_Chicago", 1500) # Cross-country
-    
-    # Set shipping costs from RDCs to stores (in dollars per unit)
-    model.set_shipping_cost("RDC1_Chicago", "NewYork_NY", 800)    # Chicago to NYC
-    model.set_shipping_cost("RDC2_Atlanta", "Miami_FL", 600)      # Atlanta to Miami
-    model.set_shipping_cost("RDC2_Atlanta", "Dallas_TX", 500)     # Atlanta to Dallas
-    model.set_shipping_cost("RDC3_Denver", "Seattle_WA", 700)     # Denver to Seattle
-    model.set_shipping_cost("RDC3_Denver", "Dallas_TX", 600)      # Denver to Dallas
+    # Automatically calculate all distance-based shipping costs
+    model.recalculate_shipping_costs()
 
 def create_snapshot(snapshot_name: str = None) -> str:
     """
@@ -339,6 +350,20 @@ def get_available_functions() -> List[Dict]:
         {
             "type": "function",
             "function": {
+                "name": "remove_plant",
+                "description": "Remove existing plant",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Name of the plant"}
+                    },
+                    "required": ["name"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "remove_regional_distribution_center",
                 "description": "Remove a regional distribution center",
                 "parameters": {
@@ -383,49 +408,62 @@ def get_available_functions() -> List[Dict]:
                 }
             }
         },
-        # {
-        #     "type": "function",
-        #     "function": {
-        #         "name": "add_plant",
-        #         "description": "Add a new plant with its capacity",
-        #         "parameters": {
-        #             "type": "object",
-        #             "properties": {
-        #                 "name": {"type": "string", "description": "Name of the plant"},
-        #                 "capacity": {"type": "number", "description": "Production capacity of the plant"}
-        #             },
-        #             "required": ["name", "capacity"]
-        #         }
-        #     }
-        # },
-        # {
-        #     "type": "function",
-        #     "function": {
-        #         "name": "add_store",
-        #         "description": "Add a new store with its demand",
-        #         "parameters": {
-        #             "type": "object",
-        #             "properties": {
-        #                 "name": {"type": "string", "description": "Name of the store"},
-        #                 "demand": {"type": "number", "description": "Demand of the store"}
-        #             },
-        #             "required": ["name", "demand"]
-        #         }
-        #     }
-        # },
         {
             "type": "function",
             "function": {
-                "name": "set_shipping_cost",
-                "description": "Set the shipping cost between a plant and a store",
+                "name": "remove_store",
+                "description": "Remove existing store",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "plant": {"type": "string", "description": "Name of the plant"},
-                        "store": {"type": "string", "description": "Name of the store"},
-                        "cost": {"type": "number", "description": "Cost per unit to ship from plant to store"}
+                        "name": {"type": "string", "description": "Name of the store"}
                     },
-                    "required": ["plant", "store", "cost"]
+                    "required": ["name"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "calculate_shipping_cost",
+                "description": "Calculate the shipping cost between a source and destination. Use the Haversine formula to determine the great-circle distance between two points on Earth.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "source": {"type": "string", "description": "Name of the source"},
+                        "destination": {"type": "string", "description": "Name of the destination"},
+                    },
+                    "required": ["source", "destination"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "update_demand",
+                "description": "Update demand of existing store",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Name of the store"},
+                        "demand": {"type": "number", "description": "New demand of the store"}
+                    },
+                    "required": ["name", "demand"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "update_capacity",
+                "description": "Update capacity of existing plant",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Name of the plant"},
+                        "capacity": {"type": "number", "description": "New capacity of the plant"}
+                    },
+                    "required": ["name", "capacity"]
                 }
             }
         },
@@ -448,84 +486,9 @@ def get_available_functions() -> List[Dict]:
         {
             "type": "function",
             "function": {
-                "name": "update_capacity",
-                "description": "Update capacity of existing plant",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string", "description": "Name of the plant"},
-                        "capacity": {"type": "number", "description": "New capacity of the plant"}
-                    },
-                    "required": ["name", "capacity"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "update_demand",
-                "description": "Update demand of existing store",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string", "description": "Name of the store"},
-                        "demand": {"type": "number", "description": "New demand of the store"}
-                    },
-                    "required": ["name", "demand"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "remove_plant",
-                "description": "Remove existing plant",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string", "description": "Name of the plant"}
-                    },
-                    "required": ["name"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "remove_store",
-                "description": "Remove existing store",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string", "description": "Name of the store"}
-                    },
-                    "required": ["name"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
                 "name": "clear_model",
                 "description": "Clear the model",
                 "parameters": {"type": "object", "properties": {}}
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "compare_with_snapshot",
-                "description": "Compare the current model with a previously saved snapshot",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "snapshot_name": {
-                            "type": "string",
-                            "description": "Name of the snapshot to compare with"
-                        }
-                    },
-                    "required": ["snapshot_name"]
-                }
             }
         },
         {
@@ -552,6 +515,14 @@ def get_available_functions() -> List[Dict]:
                     "required": ["snapshot_name"]
                 }
             }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "recalculate_shipping_costs",
+                "description": "Recalculate all shipping costs based on the current model state using the geocoded locations of plants, stores, and RDCs",
+                "parameters": {"type": "object", "properties": {}}
+            }
         }
     ]
 
@@ -564,22 +535,6 @@ def execute_function_call(function_name: str, function_args: Dict[str, Any]) -> 
             return add_store_with_geocoding(**function_args)
         elif function_name == "add_rdc_with_geocoding":
             return add_rdc_with_geocoding(**function_args)
-        # elif function_name == "add_plant":
-        #     model.add_plant(function_args["name"], function_args["capacity"])
-        #     return f"Added plant {function_args['name']} with capacity {function_args['capacity']}"
-            
-        # elif function_name == "add_store":
-        #     model.add_store(function_args["name"], function_args["demand"])
-        #     return f"Added store {function_args['name']} with demand {function_args['demand']}"
-            
-        elif function_name == "set_shipping_cost":
-            model.set_shipping_cost(
-                function_args["plant"],
-                function_args["store"],
-                function_args["cost"]
-            )
-            return f"Set shipping cost from {function_args['plant']} to {function_args['store']} to {function_args['cost']}"
-            
         elif function_name == "solve_optimization":
             solution = model.solve()
             snapshot_name = f"pre_solve_{len(snapshots) + 1}"
@@ -592,12 +547,14 @@ def execute_function_call(function_name: str, function_args: Dict[str, Any]) -> 
             shipping_costs = model.costs
             capacity = model.capacity
             demand = model.demand
+            regional_distribution_centers = model.regional_distribution_centers
             return f"""Current Model State:
                 Plants: {plants}
                 Stores: {stores}
                 Shipping Costs: {shipping_costs}
                 Capacity: {capacity}
-                Demand: {demand}"""
+                Demand: {demand}
+                Regional Distribution Centers: {regional_distribution_centers}"""
             
         elif function_name == "update_capacity":
             model.update_capacity(function_args["name"], function_args["capacity"])
@@ -609,14 +566,17 @@ def execute_function_call(function_name: str, function_args: Dict[str, Any]) -> 
             
         elif function_name == "remove_plant":
             model.remove_plant(function_args["name"])
+            model.recalculate_shipping_costs()
             return f"Removed plant {function_args['name']}"
             
         elif function_name == "remove_store":
             model.remove_store(function_args["name"])
+            model.recalculate_shipping_costs()
             return f"Removed store {function_args['name']}"
             
         elif function_name == "remove_regional_distribution_center":
             model.remove_regional_distribution_center(function_args["name"])
+            model.recalculate_shipping_costs()
             return f"Removed regional distribution center {function_args['name']}"
             
         elif function_name == "clear_model":
@@ -631,6 +591,10 @@ def execute_function_call(function_name: str, function_args: Dict[str, Any]) -> 
             
         elif function_name == "restore_snapshot":
             return restore_snapshot(function_args["snapshot_name"])
+            
+        elif function_name == "recalculate_shipping_costs":
+            model.recalculate_shipping_costs()
+            return "All shipping costs have been recalculated"
             
         else:        
             return f"Unknown function: {function_name}"
@@ -663,13 +627,11 @@ def chat_with_ai(user_input: str, messages: List[Dict] = None) -> str:
                     
                     # Execute the function
                     function_response = execute_function_call(function_name, function_args)
-                    
                     # Add the function response to the messages
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tool_call.id,
-                        "name": function_name,
-                        "content": function_response
+                        "content": function_response 
                     })
                 
                 try:
@@ -678,12 +640,12 @@ def chat_with_ai(user_input: str, messages: List[Dict] = None) -> str:
                         model="gpt-4o",
                         messages=messages
                     )
+                    messages.append(second_response.choices[0].message)
                     return second_response.choices[0].message.content
                 except Exception as e:
                     return f"I'm sorry, but I encountered an error while processing the function response: {str(e)}. Please try again."
-            
-            return response_message.content
-            
+            return response_message.content        
+
         except Exception as e:
             error_msg = str(e)
             if "rate_limit" in error_msg.lower():
@@ -705,11 +667,8 @@ def main():
     print("You can add plants, stores, set shipping costs, and solve the optimization problem.")
     print("Type 'exit' to quit.\n")
     
-    messages = [{
-        "role": "system",
-        "content": """You are a helpful assistant for network optimization. You can help users model and solve network optimization problems in supply chain. 
-        You can also help users create and compare different scenarios by taking snapshots of the model at different points in time. When comparing models, make sure to highlight the key differences and their business implications for stakeholders. A base model has been preloaded into the system."""
-    }]
+    messages = [prompt]
+    print(messages)
     
     while True:
         try:
